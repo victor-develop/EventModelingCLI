@@ -474,4 +474,33 @@ describe('Event Modeling CLI', () => {
       expect(((impactEvtR.data as any).affectedViewModels as string[])).toContain('tracking.timeline.view.timeline.detail');
     });
   });
+
+  describe('em layout', () => {
+    test('generates layout output for a graph', () => {
+      em('project', 'init', 'Layout Test');
+      em('draft', 'start', '--n', 'test');
+      em('cmd', 'new', 'hotel.cmd.BookRoom');
+      em('evt', 'new', 'hotel.evt.RoomBooked');
+      em('view', 'new', 'hotel.view.BookingSummary');
+      em('link', 'cmd->evt', 'hotel.cmd.BookRoom', 'hotel.evt.RoomBooked');
+      em('link', 'evt->view', 'hotel.evt.RoomBooked', 'hotel.view.BookingSummary');
+
+      const r = em('layout', '--focus', 'hotel.cmd.BookRoom');
+      expect(r.ok).toBe(true);
+      expect((r.data as any).layout).toBeDefined();
+      expect((r.data as any).layout.nodes.length).toBeGreaterThanOrEqual(2);
+      expect((r.data as any).layout.edges.length).toBeGreaterThanOrEqual(1);
+      expect((r.data as any).layout.viewport).toBeDefined();
+
+      const nodes = (r.data as any).layout.nodes;
+      const cmd = nodes.find((n: any) => n.canonicalNodeId === 'hotel.cmd.BookRoom');
+      const evt = nodes.find((n: any) => n.canonicalNodeId === 'hotel.evt.RoomBooked');
+      expect(cmd).toBeDefined();
+      expect(evt).toBeDefined();
+      expect(cmd.stageIndex).toBe(1);
+      expect(evt.stageIndex).toBe(2);
+      expect(cmd.lane).toBe('commandViewModel');
+      expect(evt.lane).toBe('event');
+    });
+  });
 });

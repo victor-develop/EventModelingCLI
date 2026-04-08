@@ -1,8 +1,10 @@
 import { Workspace } from '../workspace/workspace';
-import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp } from '../domain/types';
+import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeType } from '../domain/types';
 import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId } from '../graph/graph-builder';
 import { lintCanonicalId } from '../validation/lint';
 import { validate } from '../validation/validate';
+import { LayoutEngine } from '../layout/layout-engine';
+import { NormalizedPathEnvelope, NormalizedPathEnvelope as NPE, Branch } from '../layout/types';
 
 function requireProject(ws: Workspace): { manifest: ReturnType<Workspace['getManifest']>; dir: string } | CLIResult {
   const manifest = ws.getManifest();
@@ -1111,4 +1113,100 @@ function extractDomains(canonicalId: string): string[] {
   if (idx > 0) return [parts.slice(0, idx).join('.')];
   if (parts.length > 2) return [parts.slice(0, 2).join('.')];
   return [canonicalId];
+}
+
+export function layout(ws: Workspace, focusNodeId: string, direction: string = 'both', maxHops?: number): CLIResult {
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const nodes = ws.listNodes();
+  const edges = ws.listEdges();
+  const graph = buildGraph(nodes, edges);
+
+  const resolved = resolveNodeId(graph, focusNodeId);
+  if (!resolved) return errResult('em layout', 'NOT_FOUND', `Node "${focusNodeId}" not found`);
+
+  const focusNode = ws.getNode(focusNodeId);
+  if (!focusNode) return errResult('em layout', 'NOT_FOUND', `Node "${focusNodeId}" not found`);
+
+  const hops = maxHops ?? 5;
+
+  const branches: Branch[] = [];
+  const edgeTypeSet = new Set<string>();
+
+  if (direction === 'forward' || direction === 'both') {
+    const walkResult = walkGraph(graph, focusNodeId, 'forward', undefined, hops);
+    for (const wBranch of walkResult.branches) {
+      const path: NPE['branches'][0]['path'] = [];
+      for (const step of wBranch.path) {
+        if (step.nodeId) {
+          const n = ws.getNode(step.nodeId);
+          path.push({ type: 'node', nodeId: step.nodeId, nodeKind: n?.kind ?? 'cmd' });
+        }
+        if (step.edgeId && step.edgeType) {
+          path.push({ type: 'edge', edgeId: step.edgeId, edgeType: step.edgeType as EdgeType, displayDirection: 'forward' });
+        }
+      }
+      if (path.length > 0) {
+        branches.push({ branchId: `fwd_${branches.length}`, direction: 'forward', path });
+      }
+    }
+  }
+
+  if (direction === 'backward' || direction === 'both') {
+    const walkResult = walkGraph(graph, focusNodeId, 'backward', undefined, hops);
+    for (const wBranch of walkResult.branches) {
+      const path: NPE['branches'][0]['path'] = [];
+      for (const step of wBranch.path) {
+        if (step.nodeId) {
+          const n = ws.getNode(step.nodeId);
+          path.push({ type: 'node', nodeId: step.nodeId, nodeKind: n?.kind ?? 'cmd' });
+        }
+        if (step.edgeId && step.edgeType) {
+          path.push({ type: 'edge', edgeId: step.edgeId, edgeType: step.edgeType as EdgeType, displayDirection: 'forward' });
+        }
+      }
+      if (path.length > 0) {
+        branches.push({ branchId: `bwd_${branches.length}`, direction: 'backward', path });
+      }
+    }
+  }
+
+  const envelope: NormalizedPathEnvelope = {
+    anchor: { nodeId: focusNodeId },
+    branches,
+    frontier: {},
+  };
+
+  const engine = new LayoutEngine();
+  const state = engine.initLayout(envelope);
+
+  const layoutNodes = Object.values(state.occurrences).map(o => ({
+    occurrenceId: o.occurrenceId,
+    canonicalNodeId: o.canonicalNodeId,
+    nodeKind: o.nodeKind,
+    lane: o.lane,
+    stageIndex: o.stageIndex,
+    rowIndex: o.rowIndex,
+    displayRole: o.displayRole,
+    x: o.x,
+    y: o.y,
+    width: o.width,
+    height: o.height,
+  }));
+
+  const layoutEdges = Object.values(state.displayEdges).map(e => ({
+    displayEdgeId: e.displayEdgeId,
+    fromOccurrenceId: e.fromOccurrenceId,
+    toOccurrenceId: e.toOccurrenceId,
+    kind: e.kind,
+    points: e.points,
+  }));
+
+  return okResult('em layout', {
+    layout: {
+      nodes: layoutNodes,
+      edges: layoutEdges,
+      viewport: state.viewport,
+    },
+  }, { projectId: ws.getManifest()!.id });
 }

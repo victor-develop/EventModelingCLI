@@ -117,6 +117,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
     case 'walk': return cmd.walk(ws, fs(flags, 'from'), fs(flags, 'direction') || 'forward', fs(flags, 'edge-type') ? fs(flags, 'edge-type').split(',') : undefined, flags['max-hops'] ? Number(flags['max-hops']) : undefined, flags['limit'] ? Number(flags['limit']) : undefined);
     case 'trace': return cmd.trace(ws, fs(flags, 'from'), fs(flags, 'to'), flags['max-hops'] ? Number(flags['max-hops']) : undefined);
     case 'graph': return cmd.graph(ws, fs(flags, 'focus') || undefined, flags['depth'] ? Number(flags['depth']) : undefined, fs(flags, 'format') || 'mermaid');
+    case 'layout': return cmd.layout(ws, fs(flags, 'focus'), fs(flags, 'direction') || 'both', flags['max-hops'] ? Number(flags['max-hops']) : undefined);
     case 'validate': return cmd.emValidate(ws);
     case 'review': {
       if (subgroup === 'impact') {

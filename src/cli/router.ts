@@ -119,6 +119,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
     case 'graph': return cmd.graph(ws, fs(flags, 'focus') || undefined, flags['depth'] ? Number(flags['depth']) : undefined, fs(flags, 'format') || 'mermaid');
     case 'layout': return cmd.layout(ws, fs(flags, 'focus'), fs(flags, 'direction') || 'both', flags['max-hops'] ? Number(flags['max-hops']) : undefined);
     case 'validate': return cmd.emValidate(ws);
+    case 'roots': return cmd.roots(ws);
     case 'review': {
       if (subgroup === 'impact') {
         if (action === 'evt') return cmd.reviewImpactEvt(ws, positional[3] ?? '');

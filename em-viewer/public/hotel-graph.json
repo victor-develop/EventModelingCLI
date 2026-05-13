@@ -1,0 +1,238 @@
+{
+  "focusNodeId": "hotel.cmd.BookRoom",
+  "nodes": [
+    {
+      "id": "node_1",
+      "projectId": "proj_hotel-booking",
+      "kind": "cmd",
+      "canonicalId": "hotel.cmd.BookRoom",
+      "displayName": "BookRoom",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_2",
+      "projectId": "proj_hotel-booking",
+      "kind": "cmd",
+      "canonicalId": "hotel.cmd.CancelBooking",
+      "displayName": "CancelBooking",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_3",
+      "projectId": "proj_hotel-booking",
+      "kind": "cmd",
+      "canonicalId": "hotel.cmd.Checkout",
+      "displayName": "Checkout",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_5",
+      "projectId": "proj_hotel-booking",
+      "kind": "evt",
+      "canonicalId": "hotel.evt.BookingCancelled",
+      "displayName": "BookingCancelled",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_6",
+      "projectId": "proj_hotel-booking",
+      "kind": "evt",
+      "canonicalId": "hotel.evt.CheckoutCompleted",
+      "displayName": "CheckoutCompleted",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_4",
+      "projectId": "proj_hotel-booking",
+      "kind": "evt",
+      "canonicalId": "hotel.evt.RoomBooked",
+      "displayName": "RoomBooked",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_9",
+      "projectId": "proj_hotel-booking",
+      "kind": "proc",
+      "canonicalId": "hotel.proc.BookingValidator",
+      "displayName": "BookingValidator",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_10",
+      "projectId": "proj_hotel-booking",
+      "kind": "trigger",
+      "canonicalId": "hotel.trigger.CheckoutReminder",
+      "displayName": "CheckoutReminder",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_7",
+      "projectId": "proj_hotel-booking",
+      "kind": "viewModel",
+      "canonicalId": "hotel.view.BookingSummary",
+      "displayName": "BookingSummary",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_8",
+      "projectId": "proj_hotel-booking",
+      "kind": "viewModel",
+      "canonicalId": "hotel.view.RoomAvailability",
+      "displayName": "RoomAvailability",
+      "tags": [],
+      "domains": [
+        "hotel"
+      ]
+    },
+    {
+      "id": "node_12",
+      "projectId": "proj_hotel-booking",
+      "kind": "ui.form",
+      "canonicalId": "ui.form.booking-form",
+      "displayName": "Booking-Form",
+      "tags": [],
+      "domains": []
+    },
+    {
+      "id": "node_11",
+      "projectId": "proj_hotel-booking",
+      "kind": "ui.page",
+      "canonicalId": "ui.page.booking-page",
+      "displayName": "Booking-Page",
+      "tags": [],
+      "domains": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_1",
+      "projectId": "proj_hotel-booking",
+      "type": "commandCausesEvent",
+      "fromNodeId": "hotel.cmd.BookRoom",
+      "toNodeId": "hotel.evt.RoomBooked"
+    },
+    {
+      "id": "edge_10",
+      "projectId": "proj_hotel-booking",
+      "type": "uiOrProcessorConsumesViewModel",
+      "fromNodeId": "ui.form.booking-form",
+      "toNodeId": "hotel.view.BookingSummary",
+      "meta": {
+        "fieldRefs": [
+          "booking_id",
+          "guest_name"
+        ]
+      }
+    },
+    {
+      "id": "edge_11",
+      "projectId": "proj_hotel-booking",
+      "type": "roleUsesUIToIssueCommand",
+      "fromNodeId": "guest",
+      "toNodeId": "hotel.cmd.BookRoom",
+      "viaNodeId": "ui.form.booking-form"
+    },
+    {
+      "id": "edge_12",
+      "projectId": "proj_hotel-booking",
+      "type": "processorOrTriggerIssuesCommand",
+      "fromNodeId": "hotel.trigger.CheckoutReminder",
+      "toNodeId": "hotel.cmd.Checkout"
+    },
+    {
+      "id": "edge_13",
+      "projectId": "proj_hotel-booking",
+      "type": "uiOrProcessorConsumesViewModel",
+      "fromNodeId": "hotel.proc.BookingValidator",
+      "toNodeId": "hotel.view.RoomAvailability",
+      "meta": {
+        "fieldRefs": [
+          "room_id"
+        ]
+      }
+    },
+    {
+      "id": "edge_2",
+      "projectId": "proj_hotel-booking",
+      "type": "commandCausesEvent",
+      "fromNodeId": "hotel.cmd.CancelBooking",
+      "toNodeId": "hotel.evt.BookingCancelled"
+    },
+    {
+      "id": "edge_3",
+      "projectId": "proj_hotel-booking",
+      "type": "commandCausesEvent",
+      "fromNodeId": "hotel.cmd.Checkout",
+      "toNodeId": "hotel.evt.CheckoutCompleted"
+    },
+    {
+      "id": "edge_4",
+      "projectId": "proj_hotel-booking",
+      "type": "eventRefreshesViewModel",
+      "fromNodeId": "hotel.evt.RoomBooked",
+      "toNodeId": "hotel.view.BookingSummary"
+    },
+    {
+      "id": "edge_5",
+      "projectId": "proj_hotel-booking",
+      "type": "eventRefreshesViewModel",
+      "fromNodeId": "hotel.evt.RoomBooked",
+      "toNodeId": "hotel.view.RoomAvailability"
+    },
+    {
+      "id": "edge_6",
+      "projectId": "proj_hotel-booking",
+      "type": "eventRefreshesViewModel",
+      "fromNodeId": "hotel.evt.BookingCancelled",
+      "toNodeId": "hotel.view.RoomAvailability"
+    },
+    {
+      "id": "edge_7",
+      "projectId": "proj_hotel-booking",
+      "type": "eventRefreshesViewModel",
+      "fromNodeId": "hotel.evt.BookingCancelled",
+      "toNodeId": "hotel.view.BookingSummary"
+    },
+    {
+      "id": "edge_8",
+      "projectId": "proj_hotel-booking",
+      "type": "eventRefreshesViewModel",
+      "fromNodeId": "hotel.evt.CheckoutCompleted",
+      "toNodeId": "hotel.view.BookingSummary"
+    },
+    {
+      "id": "edge_9",
+      "projectId": "proj_hotel-booking",
+      "type": "parentOf",
+      "fromNodeId": "ui.page.booking-page",
+      "toNodeId": "ui.form.booking-form"
+    }
+  ]
+}

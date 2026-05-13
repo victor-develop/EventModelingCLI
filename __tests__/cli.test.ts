@@ -503,4 +503,29 @@ describe('Event Modeling CLI', () => {
       expect(evt.lane).toBe('event');
     });
   });
+
+  describe('em roots', () => {
+    test('returns empty roots for new project', () => {
+      em('project', 'init', 'Test');
+      const r = em('roots');
+      expect(r.ok).toBe(true);
+      expect((r.data as any).roots).toEqual([]);
+      expect((r.data as any).count).toBe(0);
+    });
+
+    test('returns roots after adding nodes and edges', () => {
+      em('project', 'init', 'Hotel');
+      em('draft', 'start', '--n', 'test');
+      em('cmd', 'new', 'hotel.cmd.BookRoom');
+      em('cmd', 'new', 'hotel.cmd.CancelBooking');
+      em('evt', 'new', 'hotel.evt.RoomBooked');
+      em('link', 'cmd->evt', 'hotel.cmd.BookRoom', 'hotel.evt.RoomBooked');
+      const r = em('roots');
+      expect(r.ok).toBe(true);
+      const rootIds = ((r.data as any).roots as any[]).map((x: any) => x.canonicalId);
+      expect(rootIds).toContain('hotel.cmd.BookRoom');
+      expect(rootIds).toContain('hotel.cmd.CancelBooking');
+      expect((r.data as any).count).toBe(2);
+    });
+  });
 });

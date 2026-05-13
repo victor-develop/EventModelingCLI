@@ -40,17 +40,30 @@ export function buildOccurrences(
 ): Occurrence[] {
   const occurrences: Occurrence[] = [];
   const seen = new Set<string>();
+  const branchMembership = new Map<string, string[]>();
 
   for (const branch of envelope.branches) {
     for (const step of branch.path) {
       if (step.type !== 'node') continue;
       const node = step as PathNode;
-      const key = `${node.nodeId}:${branch.branchId}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
       const displayKind = toDisplayNodeKind(node.nodeKind);
-      const lane = toDisplayLane(displayKind);
+
+      const dedupKey = displayKind === 'shared'
+        ? `${node.nodeId}:${branch.branchId}`
+        : node.nodeId;
+
+      if (seen.has(dedupKey)) {
+        const members = branchMembership.get(dedupKey) ?? [];
+        if (!members.includes(branch.branchId)) {
+          members.push(branch.branchId);
+          branchMembership.set(dedupKey, members);
+        }
+        continue;
+      }
+      seen.add(dedupKey);
+      branchMembership.set(dedupKey, [branch.branchId]);
+
+      const lane = node.lane ?? toDisplayLane(displayKind);
 
       occurrences.push({
         occurrenceId: node.occurrenceId ?? nextOccId(),
@@ -113,12 +126,14 @@ export function buildEdgeOccurrenceLinks(
   occurrences: Occurrence[],
 ): Array<{ fromOccId: string; toOccId: string; originalEdgeId: string; originalEdgeType: string }> {
   const links: Array<{ fromOccId: string; toOccId: string; originalEdgeId: string; originalEdgeType: string }> = [];
-  const nodeOccMap = new Map<string, string[]>();
+  const nodeOccMap = new Map<string, Occurrence[]>();
   for (const occ of occurrences) {
     const list = nodeOccMap.get(occ.canonicalNodeId) ?? [];
-    list.push(occ.occurrenceId);
+    list.push(occ);
     nodeOccMap.set(occ.canonicalNodeId, list);
   }
+
+  const seenEdgePairs = new Set<string>();
 
   for (const branch of envelope.branches) {
     const pathSteps = branch.path;
@@ -128,25 +143,46 @@ export function buildEdgeOccurrenceLinks(
       const node2 = pathSteps[i + 2]!;
       if (node1.type !== 'node' || edge.type !== 'edge' || node2.type !== 'node') continue;
 
-      const fromOccs = nodeOccMap.get((node1 as PathNode).nodeId) ?? [];
-      const toOccs = nodeOccMap.get((node2 as PathNode).nodeId) ?? [];
+      const pathEdge = edge as PathEdge;
+      const n1 = (node1 as PathNode).nodeId;
+      const n2 = (node2 as PathNode).nodeId;
+      const fromNodeId = pathEdge.displayDirection === 'backward' ? n2 : n1;
+      const toNodeId = pathEdge.displayDirection === 'backward' ? n1 : n2;
 
-      for (const fromId of fromOccs) {
-        for (const toId of toOccs) {
-          const fromOcc = occurrences.find(o => o.occurrenceId === fromId);
-          const toOcc = occurrences.find(o => o.occurrenceId === toId);
-          if (fromOcc?.branchClusterId === branch.branchId && toOcc?.branchClusterId === branch.branchId) {
-            links.push({
-              fromOccId: fromId,
-              toOccId: toId,
-              originalEdgeId: (edge as PathEdge).edgeId,
-              originalEdgeType: (edge as PathEdge).edgeType,
-            });
-          }
-        }
-      }
+      const fromOccs = nodeOccMap.get(fromNodeId) ?? [];
+      const toOccs = nodeOccMap.get(toNodeId) ?? [];
+
+      const fromOcc = pickOccurrenceForBranch(fromOccs, branch.branchId, fromNodeId);
+      const toOcc = pickOccurrenceForBranch(toOccs, branch.branchId, toNodeId);
+
+      if (!fromOcc || !toOcc) continue;
+
+      const pairKey = `${fromOcc.occurrenceId}:${toOcc.occurrenceId}:${(edge as PathEdge).edgeId}`;
+      if (seenEdgePairs.has(pairKey)) continue;
+      seenEdgePairs.add(pairKey);
+
+      links.push({
+        fromOccId: fromOcc.occurrenceId,
+        toOccId: toOcc.occurrenceId,
+        originalEdgeId: (edge as PathEdge).edgeId,
+        originalEdgeType: (edge as PathEdge).edgeType,
+      });
     }
   }
 
   return links;
+}
+
+function pickOccurrenceForBranch(
+  occs: Occurrence[],
+  branchId: string,
+  _nodeId: string,
+): Occurrence | undefined {
+  if (occs.length === 0) return undefined;
+  if (occs.length === 1) return occs[0];
+
+  const exact = occs.find((o) => o.branchClusterId === branchId);
+  if (exact) return exact;
+
+  return occs[0];
 }

@@ -13,8 +13,12 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "yaml": "^2.7.0",
-    "uuid": "^9.0.0"
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "uuid": "^9.0.0",
+    "yaml": "^2.7.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

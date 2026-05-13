@@ -46,7 +46,7 @@ describe('occurrence builder', () => {
     expect(occs.length).toBe(2);
     expect(occs[0].canonicalNodeId).toBe('ui.screen.refund');
     expect(occs[0].nodeKind).toBe('shared');
-    expect(occs[0].lane).toBe('shared');
+    expect(occs[0].lane).toBe('nonRole');
   });
 
   test('generates unique occurrenceIds', () => {
@@ -69,7 +69,7 @@ describe('occurrence builder', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  test('maps ui.* to shared lane', () => {
+  test('maps ui.* to nonRole lane', () => {
     const envelope: NormalizedPathEnvelope = {
       anchor: { nodeId: 'ui.screen.x' },
       branches: [{
@@ -83,11 +83,11 @@ describe('occurrence builder', () => {
     };
 
     const occs = buildOccurrences(envelope, 1);
-    expect(occs[0].lane).toBe('shared');
+    expect(occs[0].lane).toBe('nonRole');
     expect(occs[0].nodeKind).toBe('shared');
   });
 
-  test('maps proc to shared lane', () => {
+  test('maps proc to nonRole lane', () => {
     const envelope: NormalizedPathEnvelope = {
       anchor: { nodeId: 'proc.x' },
       branches: [{
@@ -101,7 +101,7 @@ describe('occurrence builder', () => {
     };
 
     const occs = buildOccurrences(envelope, 1);
-    expect(occs[0].lane).toBe('shared');
+    expect(occs[0].lane).toBe('nonRole');
   });
 
   test('maps viewModel to commandViewModel lane', () => {

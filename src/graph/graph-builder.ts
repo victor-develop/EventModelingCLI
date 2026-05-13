@@ -42,6 +42,21 @@ export function buildGraph(nodes: Node[], edges: Edge[]): Graph {
     if (toNode && toNode.canonicalId !== e.toNodeId) {
       addDirected(incoming, toNode.canonicalId);
     }
+
+    if (e.viaNodeId) {
+      const viaNode = nodeMap.get(e.viaNodeId);
+      const viaCanonical = viaNode?.canonicalId;
+      if (!viaCanonical) {
+        for (const [, n] of nodeMap) {
+          if (n.canonicalId.endsWith('.' + e.viaNodeId)) {
+            addDirected(outgoing, n.canonicalId);
+            break;
+          }
+        }
+      } else {
+        addDirected(outgoing, viaCanonical);
+      }
+    }
   }
 
   return { nodes: nodeMap, edges: edgeMap, outgoing, incoming };
@@ -49,7 +64,15 @@ export function buildGraph(nodes: Node[], edges: Edge[]): Graph {
 
 export function resolveNodeId(graph: Graph, idOrCanonical: string): string | null {
   const node = graph.nodes.get(idOrCanonical);
-  return node?.canonicalId ?? null;
+  if (node) return node.canonicalId;
+
+  for (const [, n] of graph.nodes) {
+    if (n.canonicalId.endsWith('.' + idOrCanonical) || n.canonicalId === idOrCanonical) {
+      return n.canonicalId;
+    }
+  }
+
+  return null;
 }
 
 export interface NeighborResult {
@@ -74,8 +97,14 @@ export function getNeighbors(
   const addEdges = (edges: Edge[], dir: 'in' | 'out') => {
     for (const e of edges) {
       if (edgeTypes && !edgeTypes.includes(e.type)) continue;
-      const targetId = dir === 'out' ? e.toNodeId : e.fromNodeId;
-      const targetNode = graph.nodes.get(targetId);
+      const targetIdCandidate = dir === 'out' ? e.toNodeId : e.fromNodeId;
+      let targetNode = graph.nodes.get(targetIdCandidate);
+
+      if (!targetNode && e.viaNodeId) {
+        const viaNode = graph.nodes.get(e.viaNodeId);
+        if (viaNode) targetNode = viaNode;
+      }
+
       if (!targetNode) continue;
       results.push({
         edgeId: e.id,
@@ -161,10 +190,20 @@ export function walkGraph(
       }
 
       for (const edge of filtered) {
-        const nextId = dir === 'forward' ? edge.toNodeId : edge.fromNodeId;
-        const nextNode = graph.nodes.get(nextId);
+        const nextIdCandidate = dir === 'forward' ? edge.toNodeId : edge.fromNodeId;
+        let nextNode = graph.nodes.get(nextIdCandidate);
+        let actualNextId = nextIdCandidate;
+
+        if (!nextNode && edge.viaNodeId) {
+          const viaNode = graph.nodes.get(edge.viaNodeId);
+          if (viaNode) {
+            actualNextId = edge.viaNodeId;
+            nextNode = viaNode;
+          }
+        }
+
         if (!nextNode) continue;
-        const key = `${nextId}:${edge.id}`;
+        const key = `${actualNextId}:${edge.id}`;
         if (visited.has(key)) continue;
         visited.add(key);
         const newPath = [
@@ -172,7 +211,7 @@ export function walkGraph(
           { edgeId: edge.id, edgeType: edge.type, direction: dir },
           { nodeId: nextNode.canonicalId, nodeKind: nextNode.kind },
         ];
-        stack.push({ currentId: nextId, path: newPath, depth: depth + 1 });
+        stack.push({ currentId: actualNextId, path: newPath, depth: depth + 1 });
       }
     }
     return branches;
@@ -295,4 +334,96 @@ function collectEdgesWithinDepth(graph: Graph, startId: string, maxDepth: number
 
 function sanitizeMermaid(id: string): string {
   return id.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+export interface RootNode {
+  canonicalId: string;
+  kind: NodeKind;
+  displayName: string;
+}
+
+const FLOW_INCOMING_TYPES: Set<EdgeType> = new Set([
+  'commandCausesEvent',
+  'eventRefreshesViewModel',
+  'eventUpdatesProcessor',
+  'uiOrProcessorConsumesViewModel',
+  'processorOrTriggerIssuesCommand',
+  'roleUsesUIToIssueCommand',
+]);
+
+const ROOT_ELIGIBLE_KINDS: Set<string> = new Set([
+  'cmd', 'trigger',
+  'ui.app', 'ui.area', 'ui.screen', 'ui.section', 'ui.component', 'ui.form',
+]);
+
+export function findRoots(graph: Graph): RootNode[] {
+  const roots: RootNode[] = [];
+  const seen = new Set<string>();
+
+  for (const [, node] of graph.nodes) {
+    if (seen.has(node.canonicalId)) continue;
+    seen.add(node.canonicalId);
+
+    if (!ROOT_ELIGIBLE_KINDS.has(node.kind)) continue;
+
+    const incomingEdges = graph.incoming.get(node.canonicalId) ?? [];
+    const hasFlowIncoming = incomingEdges.some(e => FLOW_INCOMING_TYPES.has(e.type));
+
+    if (!hasFlowIncoming) {
+      roots.push({
+        canonicalId: node.canonicalId,
+        kind: node.kind,
+        displayName: node.displayName,
+      });
+    }
+  }
+
+  for (const [, edge] of graph.edges) {
+    if (edge.type === 'roleUsesUIToIssueCommand' && edge.viaNodeId) {
+      const resolved = resolveNodeId(graph, edge.viaNodeId);
+      if (resolved && !seen.has(resolved)) {
+        seen.add(resolved);
+        const node = graph.nodes.get(resolved);
+        if (node) {
+          roots.push({
+            canonicalId: node.canonicalId,
+            kind: node.kind,
+            displayName: node.displayName,
+          });
+        }
+      }
+    }
+  }
+
+  return roots;
+}
+
+export function resolveLaneMap(graph: Graph): Map<string, string> {
+  const laneMap = new Map<string, string>();
+
+  for (const [, edge] of graph.edges) {
+    if (edge.type === 'roleUsesUIToIssueCommand' && edge.viaNodeId) {
+      const roleName = edge.fromNodeId;
+      const resolved = resolveNodeId(graph, edge.viaNodeId);
+      if (resolved) {
+        laneMap.set(resolved, `role:${roleName}`);
+      }
+    }
+  }
+
+  for (const [, node] of graph.nodes) {
+    if (laneMap.has(node.canonicalId)) continue;
+
+    if (node.kind === 'cmd' || node.kind === 'viewModel') {
+      laneMap.set(node.canonicalId, 'commandViewModel');
+    } else if (node.kind === 'evt') {
+      laneMap.set(node.canonicalId, 'event');
+    } else if (node.kind === 'role') {
+      continue;
+    } else {
+      laneMap.set(node.canonicalId, 'nonRole');
+    }
+  }
+
+  return laneMap;
 }

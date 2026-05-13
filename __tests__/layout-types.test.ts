@@ -13,8 +13,8 @@ describe('layout types helpers', () => {
     expect(toDisplayLane('viewModel')).toBe('commandViewModel');
   });
 
-  test('toDisplayLane maps shared to shared', () => {
-    expect(toDisplayLane('shared')).toBe('shared');
+  test('toDisplayLane maps shared to nonRole', () => {
+    expect(toDisplayLane('shared')).toBe('nonRole');
   });
 
   test('toDisplayNodeKind maps ui.screen to shared', () => {

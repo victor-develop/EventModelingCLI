@@ -10,6 +10,7 @@ const EDGE_LIFT_MAP: Record<string, { kind: DisplayEdgeKind; from: DisplayNodeKi
   eventRefreshesViewModel: { kind: 'evt-to-viewModel', from: 'evt', to: 'viewModel' },
   uiOrProcessorConsumesViewModel: { kind: 'viewModel-to-shared', from: 'viewModel', to: 'shared' },
   eventUpdatesProcessor: { kind: 'evt-to-shared', from: 'evt', to: 'shared' },
+  parentOf: { kind: 'shared-to-shared', from: 'shared', to: 'shared' },
 };
 
 export function semanticLift(edgeType: EdgeType, originalEdgeId: string): DisplayEdge {

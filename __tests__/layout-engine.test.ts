@@ -219,7 +219,7 @@ describe('LayoutEngine', () => {
     expect(evt.stageIndex).toBe(2);
     expect(vm.stageIndex).toBe(3);
 
-    expect(ui.lane).toBe('shared');
+    expect(ui.lane).toBe('nonRole');
     expect(cmd.lane).toBe('commandViewModel');
     expect(evt.lane).toBe('event');
     expect(vm.lane).toBe('commandViewModel');
@@ -230,5 +230,45 @@ describe('LayoutEngine', () => {
 
     const edges = Object.values(state.displayEdges);
     expect(edges.length).toBe(3);
+  });
+
+  test('appendExploreResult uses staged x-coordinates for row solving', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const initEnvelope = makeEnvelope('cmd.x', [
+      {
+        id: 'b1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'cmd.x', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e1', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'evt.y', nodeKind: 'evt' },
+        ],
+      },
+    ]);
+
+    const state = engine.initLayout(initEnvelope);
+    const evtOcc = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'evt.y')!;
+
+    const appendEnvelope = makeEnvelope('evt.y', [
+      {
+        id: 'b2',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'evt.y', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e2', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'view.z', nodeKind: 'viewModel' },
+        ],
+      },
+    ]);
+
+    const patch = engine.appendExploreResult(state, evtOcc.occurrenceId, appendEnvelope);
+
+    for (const occ of Object.values(state.occurrences)) {
+      expect(occ.x).toBe(occ.stageIndex * DEFAULT_LAYOUT_CONFIG.stageGap);
+    }
+
+    const vmOcc = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'view.z')!;
+    expect(vmOcc).toBeDefined();
+    expect(vmOcc.stageIndex).toBeGreaterThan(evtOcc.stageIndex);
   });
 });

@@ -6,7 +6,7 @@ describe('stage assignment', () => {
     const occs: Occurrence[] = [
       {
         occurrenceId: 'occ_shared', canonicalNodeId: 'ui.screen.x', nodeKind: 'shared',
-        lane: 'shared', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
+        lane: 'nonRole', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
         branchClusterId: 'b1', lockLevel: 'free', x: 0, y: 0, width: 220, height: 56,
       },
       {
@@ -54,7 +54,7 @@ describe('stage assignment', () => {
     const occs: Occurrence[] = [
       {
         occurrenceId: 'occ_ui', canonicalNodeId: 'ui.x', nodeKind: 'shared',
-        lane: 'shared', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
+        lane: 'nonRole', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
         branchClusterId: 'b1', lockLevel: 'free', x: 0, y: 0, width: 220, height: 56,
       },
       {

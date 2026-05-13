@@ -84,7 +84,7 @@ export function solveLaneRows(
 
   for (const occ of result) {
     if (occ.rowIndex < 0) occ.rowIndex = 0;
-    occ.y = config.laneBaseY[occ.lane] + occ.rowIndex * config.rowGap;
+    occ.y = (config.laneBaseY[occ.lane] ?? 0) + occ.rowIndex * config.rowGap;
   }
 
   return result;

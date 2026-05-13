@@ -4,7 +4,7 @@ import { NodeKind, EdgeType } from '../domain/types';
 // Display Lane Model
 // ============================================================
 
-export type DisplayLane = 'shared' | 'commandViewModel' | 'event';
+export type DisplayLane = string;
 
 export type DisplayNodeKind = 'shared' | 'cmd' | 'evt' | 'viewModel';
 
@@ -13,11 +13,12 @@ export type DisplayEdgeKind =
   | 'cmd-to-evt'
   | 'evt-to-viewModel'
   | 'viewModel-to-shared'
-  | 'evt-to-shared';
+  | 'evt-to-shared'
+  | 'shared-to-shared';
 
 export function toDisplayLane(kind: DisplayNodeKind): DisplayLane {
   switch (kind) {
-    case 'shared': return 'shared';
+    case 'shared': return 'nonRole';
     case 'cmd': return 'commandViewModel';
     case 'viewModel': return 'commandViewModel';
     case 'evt': return 'event';
@@ -43,6 +44,7 @@ export interface PathNode {
   nodeId: string;
   nodeKind: string;
   occurrenceId?: string;
+  lane?: string;
 }
 
 export interface PathEdge {
@@ -136,6 +138,14 @@ export interface Viewport {
   centerY: number;
 }
 
+export interface SwimlaneRect {
+  lane: DisplayLane;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface LayoutState {
   occurrences: Record<string, Occurrence>;
   displayEdges: Record<string, RenderedEdge>;
@@ -144,6 +154,7 @@ export interface LayoutState {
   locks: Record<string, LockLevel>;
   frontierHandles: Record<string, { direction: 'left' | 'right'; cursor?: string }>;
   viewport: Viewport;
+  swimlaneRects: SwimlaneRect[];
 }
 
 // ============================================================
@@ -162,6 +173,7 @@ export interface LayoutPatch {
   viewportHint: {
     revealDirection?: 'left' | 'right';
   };
+  updatedSwimlaneRects: SwimlaneRect[];
 }
 
 // ============================================================
@@ -173,7 +185,7 @@ export interface LayoutConfig {
   rowGap: number;
   nodeWidth: number;
   nodeHeight: number;
-  laneBaseY: Record<DisplayLane, number>;
+  laneBaseY: Record<string, number>;
 }
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
@@ -182,7 +194,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   nodeWidth: 220,
   nodeHeight: 56,
   laneBaseY: {
-    shared: 0,
+    nonRole: 0,
     commandViewModel: 200,
     event: 400,
   },

@@ -1,6 +1,6 @@
 import { Workspace } from '../workspace/workspace';
 import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeType } from '../domain/types';
-import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId } from '../graph/graph-builder';
+import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId, findRoots } from '../graph/graph-builder';
 import { lintCanonicalId } from '../validation/lint';
 import { validate } from '../validation/validate';
 import { LayoutEngine } from '../layout/layout-engine';
@@ -1105,6 +1105,23 @@ export function storyConfirmBind(ws: Workspace, storyId: string, proposalId: str
     confirmedProposalId: proposalId,
     createdEdges: createdEdges.map(e => ({ id: e.id, type: e.type, fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
   }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+}
+
+export function roots(ws: Workspace): CLIResult {
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const nodes = ws.listNodes();
+  const edges = ws.listEdges();
+  const graph = buildGraph(nodes, edges);
+  const rootNodes = findRoots(graph);
+  return okResult('em roots', {
+    roots: rootNodes.map(r => ({
+      canonicalId: r.canonicalId,
+      kind: r.kind,
+      displayName: r.displayName,
+    })),
+    count: rootNodes.length,
+  }, { projectId: ws.getManifest()!.id });
 }
 
 function extractDomains(canonicalId: string): string[] {

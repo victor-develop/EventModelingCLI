@@ -662,7 +662,113 @@ function solveLaneRowsInBand(
 }
 ```
 
-## 16. 最终结论
+## 16. Canonical Dedup：同一节点只渲染一次
+
+### 16.1 问题描述
+
+在多 branch 的 path envelope 中，同一个 canonical node（如 `hotel.cmd.BookRoom`）可能在多个 branch 中出现。如果每个 branch 都生成独立的 occurrence，会导致：
+
+- 同一个 command / event / viewModel 在画布上画多次
+- 视觉混乱，用户无法直观理解"这是同一个东西"
+- 连线重复，难以追踪事件流
+
+### 16.2 设计原则
+
+**一个 canonicalNodeId = 一次渲染，不重复。**
+
+与 spec section 7 的"允许重复 occurrence"策略不同，在 MVP 阶段我们采用 **canonical dedup** 策略：
+
+- `cmd`、`evt`、`viewModel`：**严格去重**，同一 canonicalNodeId 只产生一个 occurrence
+- `shared`（ui / trigger / proc）：**可以重复**，因为它们在不同位置可能扮演不同角色，且强制唯一容易破坏"箭头从左到右"约束
+
+### 16.3 算法
+
+在 `buildOccurrences` 阶段：
+
+1. 遍历所有 branch 的 path
+2. 对每个 node step，用 `canonicalNodeId` 作为 dedup key
+3. 如果该 canonicalNodeId 已经被某个 branch 处理过，跳过，但记录该 branch 的 edge 需要连接到已有 occurrence
+4. 对 `shared` 类型的节点，dedup key 改为 `canonicalNodeId:branchId`（允许跨 branch 重复）
+
+### 16.4 Edge 链接
+
+当多个 branch 引用同一个 canonical node 时：
+- 所有从该 node 出发的 edge 都从同一个 occurrence 出发
+- 所有到达该 node 的 edge 都指向同一个 occurrence
+- 这样一个 event fan-out 到多个 viewModel 时，只有一条线从 event 出发，然后分叉
+
+### 16.5 测试用例
+
+- 两个 branch 共享同一个 cmd（如 BookRoom），只产生 1 个 occurrence
+- 两个 branch 共享同一个 evt（如 RoomBooked），只产生 1 个 occurrence
+- shared 类型的节点可以在不同 branch 有多个 occurrence
+- edge links 正确指向合并后的单一 occurrence
+
+## 17. Dynamic Swimlane Rect：泳道动态计算
+
+### 17.1 问题描述
+
+当前泳道使用固定的 `laneBaseY` 和固定高度 120 渲染。问题：
+
+- 泳道不感知实际包含的节点
+- 当节点增多或 rowIndex 增大时，泳道不会扩展
+- 不同泳道可能重叠
+
+### 17.2 设计原则
+
+泳道的 rect 应该从 **实际放置的 occurrences** 动态计算：
+
+1. 每个泳道必须完整包含其所有 occurrences
+2. 泳道之间不能重叠
+3. 泳道之间有固定 padding（如上下各 20px）
+4. 泳道在 x 轴上覆盖整个可见范围
+
+### 17.3 SwimlaneRect 数据结构
+
+```json
+{
+  "lane": "shared",
+  "x": 0,
+  "y": -30,
+  "width": 2400,
+  "height": 180,
+  "containsOccurrenceIds": ["occ_1", "occ_2"]
+}
+```
+
+### 17.4 算法
+
+```
+function computeSwimlaneRects(occurrences, config):
+  1. 按 lane 分组 occurrences
+  2. 对每个 lane:
+     - minX = min(occ.x for occ in lane_group)
+     - minY = min(occ.y for occ in lane_group)
+     - maxX = max(occ.x + occ.width for occ in lane_group)
+     - maxY = max(occ.y + occ.height for occ in lane_group)
+     - rect = { x: minX - padX, y: minY - padY, width: maxX - minX + 2*padX, height: maxY - minY + 2*padY }
+  3. 按 lane 排序（shared -> commandViewModel -> event）
+  4. 从上到下依次排列，确保不重叠：
+     - 第一个 lane 的 rect.y = rect.y（保持原始位置）
+     - 后续 lane 的 rect.y = max(前一个 lane rect.y + 前一个 lane rect.height + interLaneGap, 当前 rect.y)
+```
+
+### 17.5 增量更新
+
+当新增 occurrences 时：
+- 重新计算受影响 lane 的 rect
+- 检查是否与其他 lane 重叠
+- 如果重叠，向下推移后续 lane
+
+### 17.6 测试用例
+
+- 单个 occurrence 的泳道 rect 正确包含该节点
+- 多个 occurrence 的泳道 rect 包含所有节点
+- 不同泳道的 rect 不重叠
+- 增量添加后，泳道 rect 正确扩展
+- 空泳道不产生 rect
+
+## 18. 最终结论
 
 如果目标是：
 

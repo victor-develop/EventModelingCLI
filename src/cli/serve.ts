@@ -4,8 +4,15 @@ import { Workspace } from '../workspace/workspace';
 import { buildGraph, walkGraph, findRoots, resolveLaneMap } from '../graph/graph-builder';
 import type { Node, Edge } from '../domain/types';
 import type { WalkBranch } from '../graph/graph-builder';
+import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
+import type { SnapshotDirection } from '../viewer-contract';
 
-export function startServer(ws: Workspace, opts: { port?: number } = {}) {
+export function createServerApp(ws: Workspace): {
+  app: express.Express;
+  manifest: ReturnType<Workspace['getManifest']>;
+  nodeCount: number;
+  edgeCount: number;
+} {
   const app = express();
   app.use(cors());
   app.use(express.json());
@@ -13,11 +20,10 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
   const manifest = ws.getManifest();
   if (!manifest) {
     console.error(`No active project. Run 'em project init' or 'em project open' first.`);
-    process.exit(1);
   }
 
-  const nodes = ws.listNodes();
-  const edges = ws.listEdges();
+  const nodes = manifest ? ws.listNodes() : [];
+  const edges = manifest ? ws.listEdges() : [];
   const graph = buildGraph(nodes, edges);
 
   const laneMap = resolveLaneMap(graph);
@@ -67,7 +73,21 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
     return result;
   }
 
+  function sendNoProject(res: express.Response): void {
+    res.status(400).json({
+      error: {
+        code: 'NO_PROJECT',
+        message: 'No active project. Run em project init or em project open.',
+      },
+    });
+  }
+
   app.get('/api/roots', (_req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
     const rootNodes = findRoots(graph);
     const rootIds = rootNodes.map(r => r.canonicalId);
     res.json({
@@ -82,6 +102,11 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
   });
 
   app.get('/api/init', (req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
     const focus = (req.query.focus as string) || nodes[0]?.canonicalId || '';
     const result = walkGraph(graph, focus, 'both', undefined, 1);
     const collectedNodes = collectNodes(result.branches);
@@ -96,7 +121,49 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
     });
   });
 
+  app.get('/api/layout', (req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
+    const focus = (req.query.focus as string) || nodes[0]?.canonicalId || '';
+    const direction = ((req.query.direction as string) || 'both') as SnapshotDirection;
+    const hops = parseInt(req.query.hops as string) || 2;
+
+    if (!focus) {
+      res.status(400).json({
+        error: {
+          code: 'MISSING_FOCUS',
+          message: 'focus query parameter is required',
+        },
+      });
+      return;
+    }
+
+    try {
+      res.json(buildVisualizationSnapshot({ workspace: ws, focus, direction, hops }));
+    } catch (error) {
+      if (error instanceof VisualizationSnapshotError) {
+        res.status(error.status).json({
+          error: {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          },
+        });
+        return;
+      }
+      throw error;
+    }
+  });
+
   app.get('/api/walk', (req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
     const from = req.query.from as string;
     const direction = (req.query.direction as 'forward' | 'backward' | 'both') || 'forward';
     const hops = parseInt(req.query.hops as string) || 3;
@@ -120,15 +187,30 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
     });
   });
 
+  return {
+    app,
+    manifest,
+    nodeCount: nodes.length,
+    edgeCount: edges.length,
+  };
+}
+
+export function startServer(ws: Workspace, opts: { port?: number } = {}) {
+  const { app, manifest, nodeCount, edgeCount } = createServerApp(ws);
+
   const PORT = opts.port || parseInt(process.env.PORT || '5198');
   return new Promise<void>((resolve) => {
     app.listen(PORT, () => {
       console.log(`em serve — http://localhost:${PORT}`);
-      console.log(`  Project: ${manifest.name} (${manifest.id})`);
-      console.log(`  Nodes: ${nodes.length}, Edges: ${edges.length}`);
-    console.log(`  GET /api/init?focus=<nodeId>`);
-    console.log(`  GET /api/roots`);
-    console.log(`  GET /api/walk?from=<nodeId>&direction=forward|backward&hops=3`);
+      if (manifest) {
+        console.log(`  Project: ${manifest.name} (${manifest.id})`);
+      }
+      console.log(`  Nodes: ${nodeCount}, Edges: ${edgeCount}`);
+      console.log(`  GET /api/init?focus=<nodeId>`);
+      console.log(`  GET /api/layout?focus=<nodeId>&direction=both&hops=2`);
+      console.log(`  GET /api/roots`);
+      console.log(`  GET /api/walk?from=<nodeId>&direction=forward|backward&hops=3`);
+      resolve();
     });
   });
 }

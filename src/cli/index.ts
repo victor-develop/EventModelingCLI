@@ -5,6 +5,14 @@ import { startServer } from './serve';
 
 function print(result: import('../domain/types').CLIResult) {
   if (result.ok) {
+    if (
+      typeof result.data?.output === 'string' &&
+      (result.data.format === 'table' || result.data.format === 'ascii')
+    ) {
+      console.log(result.data.output);
+      return;
+    }
+
     if (result.data && typeof result.data === 'object') {
       console.log(JSON.stringify(result.data, null, 2));
     }
@@ -37,7 +45,7 @@ function main() {
     console.log('  link cmd->evt <a> <b>     Link command to event');
     console.log('  link evt->view <a> <b>    Link event to view model');
     console.log('  walk --from <id>          Walk the graph');
-    console.log('  layout --focus <id>       Generate layout');
+    console.log('  layout --focus <id>       Generate layout (--format json|table|ascii)');
     console.log('  graph                     Show graph (mermaid)');
     console.log('  serve [--port <n>]        Start API server for em-viewer');
     console.log('  roots                      List flow root nodes');

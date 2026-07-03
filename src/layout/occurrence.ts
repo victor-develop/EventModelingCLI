@@ -12,15 +12,9 @@ import {
   MergeKey,
 } from './types';
 
-let occCounter = 0;
-
-function nextOccId(): string {
-  occCounter++;
-  return `occ_${occCounter}`;
-}
-
-export function resetOccCounter(): void {
-  occCounter = 0;
+function nextOccId(counter: { value: number }): string {
+  counter.value += 1;
+  return `occ_${counter.value}`;
 }
 
 function inferDisplayRole(nodeKind: string): DisplayRole {
@@ -41,6 +35,7 @@ export function buildOccurrences(
   const occurrences: Occurrence[] = [];
   const seen = new Set<string>();
   const branchMembership = new Map<string, string[]>();
+  const occurrenceIdCounter = { value: branchOffset };
 
   for (const branch of envelope.branches) {
     for (const step of branch.path) {
@@ -66,7 +61,7 @@ export function buildOccurrences(
       const lane = node.lane ?? toDisplayLane(displayKind);
 
       occurrences.push({
-        occurrenceId: node.occurrenceId ?? nextOccId(),
+        occurrenceId: node.occurrenceId ?? nextOccId(occurrenceIdCounter),
         canonicalNodeId: node.nodeId,
         nodeKind: displayKind,
         lane,

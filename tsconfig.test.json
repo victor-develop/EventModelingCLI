@@ -3,7 +3,11 @@
   "compilerOptions": {
     "rootDir": ".",
     "strict": false,
-    "noImplicitAny": false
+    "noImplicitAny": false,
+    "baseUrl": ".",
+    "paths": {
+      "@em/*": ["src/*"]
+    }
   },
-  "include": ["src/**/*", "__tests__/**/*"]
+  "include": ["src/**/*", "__tests__/**/*", "em-viewer/src/xyflow/adapter/**/*"]
 }

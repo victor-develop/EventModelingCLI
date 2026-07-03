@@ -1,5 +1,6 @@
 import { LayoutEngine } from '../src/layout/layout-engine';
 import { NormalizedPathEnvelope, LayoutState, LayoutConfig, DEFAULT_LAYOUT_CONFIG } from '../src/layout/types';
+import { resetDeCounter } from '../src/layout/semantic-lift';
 
 function makeEnvelope(
   anchorId: string,
@@ -270,5 +271,52 @@ describe('LayoutEngine', () => {
     const vmOcc = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'view.z')!;
     expect(vmOcc).toBeDefined();
     expect(vmOcc.stageIndex).toBeGreaterThan(evtOcc.stageIndex);
+  });
+
+  test('appendExploreResult continues ids from a server-built state in a fresh engine context', () => {
+    const serverEngine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const initEnvelope = makeEnvelope('cmd.x', [
+      {
+        id: 'b1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'cmd.x', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e1', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'evt.y', nodeKind: 'evt' },
+        ],
+      },
+    ]);
+
+    const serverState = serverEngine.initLayout(initEnvelope);
+    const browserState = JSON.parse(JSON.stringify(serverState));
+    const existingOccurrenceIds = new Set(Object.keys(browserState.occurrences));
+    const existingEdgeIds = new Set(Object.keys(browserState.displayEdges));
+    const evtOcc = Object.values(browserState.occurrences).find((o: any) => o.canonicalNodeId === 'evt.y') as any;
+
+    resetDeCounter();
+    const patch = new LayoutEngine(DEFAULT_LAYOUT_CONFIG).appendExploreResult(
+      browserState,
+      evtOcc.occurrenceId,
+      makeEnvelope('evt.y', [
+        {
+          id: 'b2',
+          dir: 'forward',
+          path: [
+            { type: 'node', nodeId: 'evt.y', nodeKind: 'evt' },
+            { type: 'edge', edgeId: 'e2', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+            { type: 'node', nodeId: 'view.z', nodeKind: 'viewModel' },
+          ],
+        },
+      ]),
+    );
+
+    expect(patch.addedOccurrences.every(o => !existingOccurrenceIds.has(o.occurrenceId))).toBe(true);
+    expect(patch.addedEdges.every(e => !existingEdgeIds.has(e.displayEdgeId))).toBe(true);
+    for (const occurrenceId of existingOccurrenceIds) {
+      expect(browserState.occurrences[occurrenceId]).toEqual(serverState.occurrences[occurrenceId]);
+    }
+    for (const edgeId of existingEdgeIds) {
+      expect(browserState.displayEdges[edgeId]).toEqual(serverState.displayEdges[edgeId]);
+    }
   });
 });

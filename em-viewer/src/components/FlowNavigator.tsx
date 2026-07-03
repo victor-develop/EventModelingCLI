@@ -1,4 +1,5 @@
 import type { RootNodeInfo } from '../types';
+import { PanelLeftOpen, X } from 'lucide-react';
 
 interface FlowNavigatorProps {
   roots: RootNodeInfo[];
@@ -26,7 +27,7 @@ export function FlowNavigator({ roots, activeRootId, onSelectRoot, collapsed, on
         onClick={onToggleCollapse}
         title="Show Flows"
       >
-        🧭
+        <PanelLeftOpen size={18} />
       </button>
     );
   }
@@ -35,7 +36,9 @@ export function FlowNavigator({ roots, activeRootId, onSelectRoot, collapsed, on
     <div className="overlay flow-navigator">
       <div className="flow-nav-header">
         <h3>FLOWS</h3>
-        <button className="flow-nav-close" onClick={onToggleCollapse}>✕</button>
+        <button className="flow-nav-close" onClick={onToggleCollapse} aria-label="Close flows">
+          <X size={14} />
+        </button>
       </div>
       <div className="flow-nav-list">
         {roots.map(root => {

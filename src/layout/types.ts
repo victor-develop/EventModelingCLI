@@ -93,7 +93,7 @@ export interface DisplayEdge {
 // Occurrence Model (spec sections 6-7, 11)
 // ============================================================
 
-export type LockLevel = 'hard' | 'soft' | 'free';
+export type LockLevel = 'hard' | 'soft' | 'free' | 'none';
 
 export type DisplayRole = 'command' | 'event' | 'projection' | 'trigger' | 'ui' | 'processor';
 

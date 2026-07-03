@@ -7,11 +7,11 @@ interface HeaderProps {
 export function Header({ projectName, walkCount, activeRootName }: HeaderProps) {
   return (
     <div className="overlay header">
-      <h1>🏨 {projectName} — <span>Event Modeling</span></h1>
+      <h1>{projectName} <span>Event Modeling</span></h1>
       <p>
-        Infinite Canvas Layout · Walk #{walkCount} · Drag to pan · Scroll to zoom
+        Infinite Canvas Layout / Walk #{walkCount}
         {activeRootName && (
-          <> · <span className="active-flow-label">Flow: {activeRootName}</span></>
+          <> / <span className="active-flow-label">Flow: {activeRootName}</span></>
         )}
       </p>
     </div>

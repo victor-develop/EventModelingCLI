@@ -13,13 +13,13 @@ const EDGE_LIFT_MAP: Record<string, { kind: DisplayEdgeKind; from: DisplayNodeKi
   parentOf: { kind: 'shared-to-shared', from: 'shared', to: 'shared' },
 };
 
-export function semanticLift(edgeType: EdgeType, originalEdgeId: string): DisplayEdge {
+export function semanticLift(edgeType: EdgeType, originalEdgeId: string, displayEdgeId?: string): DisplayEdge {
   const mapping = EDGE_LIFT_MAP[edgeType];
   if (!mapping) throw new Error(`Unknown edge type for semantic lift: ${edgeType}`);
 
   deCounter++;
   return {
-    displayEdgeId: `de_${deCounter}`,
+    displayEdgeId: displayEdgeId ?? `de_${deCounter}`,
     fromNodeKind: mapping.from,
     toNodeKind: mapping.to,
     kind: mapping.kind,

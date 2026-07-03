@@ -3,8 +3,9 @@ import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeTyp
 import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId, findRoots } from '../graph/graph-builder';
 import { lintCanonicalId } from '../validation/lint';
 import { validate } from '../validation/validate';
-import { LayoutEngine } from '../layout/layout-engine';
-import { NormalizedPathEnvelope, NormalizedPathEnvelope as NPE, Branch } from '../layout/types';
+import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
+import type { SnapshotDirection } from '../viewer-contract';
+import { renderLayoutAscii, renderLayoutTable } from '../terminal-viewer';
 
 function requireProject(ws: Workspace): { manifest: ReturnType<Workspace['getManifest']>; dir: string } | CLIResult {
   const manifest = ws.getManifest();
@@ -1132,98 +1133,54 @@ function extractDomains(canonicalId: string): string[] {
   return [canonicalId];
 }
 
-export function layout(ws: Workspace, focusNodeId: string, direction: string = 'both', maxHops?: number): CLIResult {
-  const check = requireProject(ws);
-  if ('ok' in check && !check.ok) return check;
-  const nodes = ws.listNodes();
-  const edges = ws.listEdges();
-  const graph = buildGraph(nodes, edges);
+export function layout(
+  ws: Workspace,
+  focusNodeId: string,
+  direction: string = 'both',
+  maxHops?: number,
+  format: string = 'json',
+): CLIResult {
+  try {
+    const snapshot = buildVisualizationSnapshot({
+      workspace: ws,
+      focus: focusNodeId,
+      direction: direction as SnapshotDirection,
+      hops: maxHops ?? 2,
+    });
 
-  const resolved = resolveNodeId(graph, focusNodeId);
-  if (!resolved) return errResult('em layout', 'NOT_FOUND', `Node "${focusNodeId}" not found`);
-
-  const focusNode = ws.getNode(focusNodeId);
-  if (!focusNode) return errResult('em layout', 'NOT_FOUND', `Node "${focusNodeId}" not found`);
-
-  const hops = maxHops ?? 5;
-
-  const branches: Branch[] = [];
-  const edgeTypeSet = new Set<string>();
-
-  if (direction === 'forward' || direction === 'both') {
-    const walkResult = walkGraph(graph, focusNodeId, 'forward', undefined, hops);
-    for (const wBranch of walkResult.branches) {
-      const path: NPE['branches'][0]['path'] = [];
-      for (const step of wBranch.path) {
-        if (step.nodeId) {
-          const n = ws.getNode(step.nodeId);
-          path.push({ type: 'node', nodeId: step.nodeId, nodeKind: n?.kind ?? 'cmd' });
-        }
-        if (step.edgeId && step.edgeType) {
-          path.push({ type: 'edge', edgeId: step.edgeId, edgeType: step.edgeType as EdgeType, displayDirection: 'forward' });
-        }
-      }
-      if (path.length > 0) {
-        branches.push({ branchId: `fwd_${branches.length}`, direction: 'forward', path });
-      }
+    if (format === 'table') {
+      return okResult('em layout', {
+        format,
+        output: renderLayoutTable(snapshot),
+      }, { projectId: ws.getManifest()?.id });
     }
-  }
 
-  if (direction === 'backward' || direction === 'both') {
-    const walkResult = walkGraph(graph, focusNodeId, 'backward', undefined, hops);
-    for (const wBranch of walkResult.branches) {
-      const path: NPE['branches'][0]['path'] = [];
-      for (const step of wBranch.path) {
-        if (step.nodeId) {
-          const n = ws.getNode(step.nodeId);
-          path.push({ type: 'node', nodeId: step.nodeId, nodeKind: n?.kind ?? 'cmd' });
-        }
-        if (step.edgeId && step.edgeType) {
-          path.push({ type: 'edge', edgeId: step.edgeId, edgeType: step.edgeType as EdgeType, displayDirection: 'forward' });
-        }
-      }
-      if (path.length > 0) {
-        branches.push({ branchId: `bwd_${branches.length}`, direction: 'backward', path });
-      }
+    if (format === 'ascii') {
+      return okResult('em layout', {
+        format,
+        output: renderLayoutAscii(snapshot),
+      }, { projectId: ws.getManifest()?.id });
     }
+
+    if (format === 'legacy') {
+      return okResult('em layout', {
+        layout: {
+          nodes: snapshot.occurrences,
+          edges: snapshot.renderedEdges,
+          viewport: snapshot.layoutState.viewport,
+        },
+      }, { projectId: ws.getManifest()?.id });
+    }
+
+    if (format !== 'json') {
+      return errResult('em layout', 'INVALID_FORMAT', `Unsupported layout format "${format}". Use json, table, or ascii.`);
+    }
+
+    return okResult('em layout', snapshot as unknown as Record<string, unknown>, { projectId: ws.getManifest()?.id });
+  } catch (error) {
+    if (error instanceof VisualizationSnapshotError) {
+      return errResult('em layout', error.code, error.message, { details: error.details });
+    }
+    throw error;
   }
-
-  const envelope: NormalizedPathEnvelope = {
-    anchor: { nodeId: focusNodeId },
-    branches,
-    frontier: {},
-  };
-
-  const engine = new LayoutEngine();
-  const state = engine.initLayout(envelope);
-
-  const layoutNodes = Object.values(state.occurrences).map(o => ({
-    occurrenceId: o.occurrenceId,
-    canonicalNodeId: o.canonicalNodeId,
-    nodeKind: o.nodeKind,
-    lane: o.lane,
-    stageIndex: o.stageIndex,
-    rowIndex: o.rowIndex,
-    displayRole: o.displayRole,
-    x: o.x,
-    y: o.y,
-    width: o.width,
-    height: o.height,
-  }));
-
-  const layoutEdges = Object.values(state.displayEdges).map(e => ({
-    displayEdgeId: e.displayEdgeId,
-    fromOccurrenceId: e.fromOccurrenceId,
-    toOccurrenceId: e.toOccurrenceId,
-    kind: e.kind,
-    points: e.points,
-  }));
-
-  return okResult('em layout', {
-    layout: {
-      nodes: layoutNodes,
-      edges: layoutEdges,
-      viewport: state.viewport,
-    },
-  }, { projectId: ws.getManifest()!.id });
 }

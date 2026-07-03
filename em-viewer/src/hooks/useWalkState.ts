@@ -1,67 +1,58 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { LayoutEngine } from '@em/layout/layout-engine';
-import type { LayoutState } from '@em/layout/types';
+import type { LayoutPatch, LayoutState } from '@em/layout/types';
 import type { WalkBranch } from '@em/graph/graph-builder';
 import type { Node, Edge } from '@em/domain/types';
-import { walkResultToEnvelope } from '../utils/walk-to-envelope';
-import type { InitResponse } from './useGraphData';
+import type { VisualizationSnapshot } from '@em/viewer-contract/types';
+import { walkBranchesToEnvelope } from '@em/viewer-contract/envelope';
 
 interface UseWalkStateResult {
-  layoutState: LayoutState | null;
-  nodeMap: Record<string, Node>;
+  patch: LayoutPatch | null;
+  domainNodes: Record<string, Node>;
   walkLeft: () => void;
   walkRight: () => void;
+  setOccurrenceLock: (occurrenceId: string, lockLevel: 'hard' | 'none') => void;
+  resetOccurrencePosition: (occurrenceId: string) => void;
   canWalkLeft: boolean;
   canWalkRight: boolean;
   walkCount: number;
+  isWalking: boolean;
 }
 
 function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
 }
 
-export function useWalkState(initData: InitResponse | null): UseWalkStateResult {
+export function useWalkState(initData: VisualizationSnapshot | null): UseWalkStateResult {
   const engineRef = useRef(new LayoutEngine());
-  const [layoutState, setLayoutState] = useState<LayoutState | null>(null);
-  const [nodeMap, setNodeMap] = useState<Record<string, Node>>({});
+  const layoutStateRef = useRef<LayoutState | null>(null);
+  const baselineLayoutStateRef = useRef<LayoutState | null>(null);
+  const [patch, setPatch] = useState<LayoutPatch | null>(null);
+  const [domainNodes, setDomainNodes] = useState<Record<string, Node>>({});
   const [walkCount, setWalkCount] = useState(0);
   const isWalkingRef = useRef(false);
   const [canWalkLeft, setCanWalkLeft] = useState(true);
   const [canWalkRight, setCanWalkRight] = useState(true);
-
-  const allBranchesRef = useRef<WalkBranch[]>([]);
-
-  const laneMapRef = useRef<Record<string, string>>({});
-
-  const rebuildLayout = useCallback((focusNodeId: string) => {
-    if (allBranchesRef.current.length === 0) return;
-    const envelope = walkResultToEnvelope(
-      { branches: allBranchesRef.current },
-      focusNodeId,
-      laneMapRef.current,
-    );
-    if (envelope.branches.length === 0) return;
-
-    const state = engineRef.current.initLayout(envelope);
-    setLayoutState(deepClone(state));
-  }, []);
+  const [isWalking, setIsWalking] = useState(false);
 
   useEffect(() => {
     if (!initData) return;
 
-    allBranchesRef.current = [...initData.branches];
-    setNodeMap(initData.nodes);
-    laneMapRef.current = initData.laneMap ?? {};
-
-    rebuildLayout(initData.focusNodeId);
+    layoutStateRef.current = deepClone(initData.layoutState);
+    baselineLayoutStateRef.current = deepClone(initData.layoutState);
+    setDomainNodes(initData.domainNodes);
+    setPatch(null);
     setWalkCount(0);
     setCanWalkLeft(true);
     setCanWalkRight(true);
-  }, [initData, rebuildLayout]);
+    setIsWalking(false);
+  }, [initData]);
 
   const walk = useCallback(async (direction: 'forward' | 'backward') => {
+    const layoutState = layoutStateRef.current;
     if (!layoutState || !initData || isWalkingRef.current) return;
     isWalkingRef.current = true;
+    setIsWalking(true);
 
     const preferHighStage = direction === 'forward';
 
@@ -91,21 +82,72 @@ export function useWalkState(initData: InitResponse | null): UseWalkStateResult 
         return;
       }
 
-      allBranchesRef.current = [...allBranchesRef.current, ...result.branches];
-      setNodeMap(prev => ({ ...prev, ...result.nodes }));
-      if (result.laneMap) {
-        laneMapRef.current = { ...laneMapRef.current, ...result.laneMap };
+      const envelope = walkBranchesToEnvelope({
+        branches: result.branches,
+        focusNodeId: frontier.canonicalNodeId,
+        laneMap: result.laneMap,
+        includeSingletonBranches: false,
+      });
+      if (envelope.branches.length === 0) {
+        if (preferHighStage) setCanWalkRight(false);
+        else setCanWalkLeft(false);
+        return;
       }
 
-      rebuildLayout(initData.focusNodeId);
+      setDomainNodes(prev => ({ ...prev, ...result.nodes }));
+      const nextPatch = direction === 'forward'
+        ? engineRef.current.appendExploreResult(layoutState, frontier.occurrenceId, envelope)
+        : engineRef.current.prependExploreResult(layoutState, frontier.occurrenceId, envelope);
+      setPatch(deepClone(nextPatch));
       setWalkCount(c => c + 1);
     } finally {
       isWalkingRef.current = false;
+      setIsWalking(false);
     }
-  }, [layoutState, initData, rebuildLayout]);
+  }, [initData]);
 
   const walkRight = useCallback(() => { walk('forward'); }, [walk]);
   const walkLeft = useCallback(() => { walk('backward'); }, [walk]);
 
-  return { layoutState, nodeMap, walkLeft, walkRight, canWalkLeft, canWalkRight, walkCount };
+  const setOccurrenceLock = useCallback((occurrenceId: string, lockLevel: 'hard' | 'none') => {
+    const layoutState = layoutStateRef.current;
+    const occurrence = layoutState?.occurrences[occurrenceId];
+    if (!layoutState || !occurrence) return;
+    occurrence.lockLevel = lockLevel;
+    if (lockLevel === 'hard') {
+      layoutState.locks[occurrenceId] = 'hard';
+    } else {
+      delete layoutState.locks[occurrenceId];
+    }
+  }, []);
+
+  const resetOccurrencePosition = useCallback((occurrenceId: string) => {
+    const layoutState = layoutStateRef.current;
+    const baseline = baselineLayoutStateRef.current?.occurrences[occurrenceId];
+    const occurrence = layoutState?.occurrences[occurrenceId];
+    if (!layoutState || !baseline || !occurrence) return;
+    layoutState.occurrences[occurrenceId] = {
+      ...occurrence,
+      lane: baseline.lane,
+      stageIndex: baseline.stageIndex,
+      rowIndex: baseline.rowIndex,
+      x: baseline.x,
+      y: baseline.y,
+      width: baseline.width,
+      height: baseline.height,
+    };
+  }, []);
+
+  return {
+    patch,
+    domainNodes,
+    walkLeft,
+    walkRight,
+    setOccurrenceLock,
+    resetOccurrencePosition,
+    canWalkLeft,
+    canWalkRight,
+    walkCount,
+    isWalking,
+  };
 }

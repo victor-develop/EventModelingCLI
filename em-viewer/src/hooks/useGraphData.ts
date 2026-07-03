@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Node, Edge } from '@em/domain/types';
 import type { WalkBranch } from '@em/graph/graph-builder';
+import type { VisualizationSnapshot } from '@em/viewer-contract/types';
 import type { RootNodeInfo } from '../types';
 
 export interface InitResponse {
@@ -19,25 +20,22 @@ export interface RootsResponse {
 }
 
 export function useGraphData() {
-  const [data, setData] = useState<InitResponse | null>(null);
+  const [data, setData] = useState<VisualizationSnapshot | null>(null);
   const [rootsData, setRootsData] = useState<RootsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/init').then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<InitResponse>;
-      }),
-      fetch('/api/roots').then(r => {
+    fetch('/api/roots')
+      .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<RootsResponse>;
-      }),
-    ])
-      .then(([initResp, rootsResp]) => {
-        setData(initResp);
+      })
+      .then(async (rootsResp) => {
+        const firstFocus = rootsResp.roots[0]?.canonicalId;
+        const layoutResp = await fetchLayout(firstFocus);
+        setData(layoutResp);
         setRootsData(rootsResp);
         setLoading(false);
       })
@@ -49,11 +47,7 @@ export function useGraphData() {
 
   const refocus = useCallback((newFocusId: string) => {
     setSwitching(true);
-    fetch(`/api/init?focus=${encodeURIComponent(newFocusId)}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<InitResponse>;
-      })
+    fetchLayout(newFocusId)
       .then(initResp => {
         setData(initResp);
         setSwitching(false);
@@ -65,6 +59,18 @@ export function useGraphData() {
   }, []);
 
   return { data, rootsData, loading, switching, error, refocus };
+}
+
+function fetchLayout(focus?: string): Promise<VisualizationSnapshot> {
+  const params = new URLSearchParams({ direction: 'both', hops: '2' });
+  if (focus) params.set('focus', focus);
+  return fetch(`/api/layout?${params.toString()}`).then(async r => {
+    if (!r.ok) {
+      const body = await r.json().catch(() => undefined) as { error?: { message?: string } } | undefined;
+      throw new Error(body?.error?.message ?? `HTTP ${r.status}`);
+    }
+    return r.json() as Promise<VisualizationSnapshot>;
+  });
 }
 
 export function getDisplayName(nodeMap: Record<string, Node> | null, canonicalNodeId: string): string {

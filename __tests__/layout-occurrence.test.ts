@@ -69,6 +69,24 @@ describe('occurrence builder', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  test('continues occurrenceIds after the supplied branch offset', () => {
+    const envelope: NormalizedPathEnvelope = {
+      anchor: { nodeId: 'cmd.x' },
+      branches: [{
+        branchId: 'b1',
+        direction: 'forward',
+        path: [
+          { type: 'node', nodeId: 'cmd.x', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e1', edgeType: 'commandCausesEvent', displayDirection: 'forward' },
+          { type: 'node', nodeId: 'evt.y', nodeKind: 'evt' },
+        ],
+      }],
+      frontier: {},
+    };
+
+    expect(buildOccurrences(envelope, 2).map(o => o.occurrenceId)).toEqual(['occ_3', 'occ_4']);
+  });
+
   test('maps ui.* to nonRole lane', () => {
     const envelope: NormalizedPathEnvelope = {
       anchor: { nodeId: 'ui.screen.x' },

@@ -22,7 +22,8 @@ export type {
 } from './types';
 export { DEFAULT_LAYOUT_CONFIG, toDisplayLane, toDisplayNodeKind } from './types';
 export { semanticLift } from './semantic-lift';
-export { buildOccurrences, mergeOccurrences } from './occurrence';
+export { buildOccurrences, mergeOccurrences, mergeSameStageSharedOccurrences } from './occurrence';
+export type { EdgeOccurrenceLink } from './occurrence';
 export { assignStages } from './stage';
 export { solveLaneRows } from './row-solver';
 export { routeEdges } from './edge-router';

@@ -12,11 +12,13 @@ const PAN_AMOUNT = 400;
 export function InfiniteCanvas({ children, panRequest, onPanHandled }: InfiniteCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<ViewportState>({ offsetX: 40, offsetY: 250, scale: 1 });
+  const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     if (!panRequest) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- panRequest is an imperative viewport command from the parent.
     setViewport(v => ({
       ...v,
       offsetX: panRequest === 'right' ? v.offsetX - PAN_AMOUNT : v.offsetX + PAN_AMOUNT,
@@ -26,6 +28,7 @@ export function InfiniteCanvas({ children, panRequest, onPanHandled }: InfiniteC
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true;
+    setIsDragging(true);
     lastPos.current = { x: e.clientX, y: e.clientY };
   }, []);
 
@@ -41,6 +44,7 @@ export function InfiniteCanvas({ children, panRequest, onPanHandled }: InfiniteC
 
   const handleMouseUp = useCallback(() => {
     dragging.current = false;
+    setIsDragging(false);
   }, []);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -63,7 +67,7 @@ export function InfiniteCanvas({ children, panRequest, onPanHandled }: InfiniteC
   return (
     <svg
       ref={svgRef}
-      style={{ width: '100vw', height: '100vh', display: 'block', cursor: dragging.current ? 'grabbing' : 'grab', background: '#0f0f1a' }}
+      style={{ width: '100vw', height: '100vh', display: 'block', cursor: isDragging ? 'grabbing' : 'grab', background: '#0f0f1a' }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

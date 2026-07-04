@@ -11,6 +11,14 @@ import {
   PathEdge,
   MergeKey,
 } from './types';
+import { getEventModelingDisplayEndpointIds } from '../domain/event-modeling-edges';
+
+export interface EdgeOccurrenceLink {
+  fromOccId: string;
+  toOccId: string;
+  originalEdgeId: string;
+  originalEdgeType: string;
+}
 
 function nextOccId(counter: { value: number }): string {
   counter.value += 1;
@@ -107,6 +115,44 @@ export function mergeOccurrences(
   return { merged, added };
 }
 
+export function mergeSameStageSharedOccurrences(
+  occurrences: Occurrence[],
+  edgeOccLinks: EdgeOccurrenceLink[],
+): { occurrences: Occurrence[]; edgeOccLinks: EdgeOccurrenceLink[]; removedOccurrenceIds: string[] } {
+  const merged: Occurrence[] = [];
+  const keptByKey = new Map<string, Occurrence>();
+  const occurrenceIdRemap = new Map<string, string>();
+  const removedOccurrenceIds: string[] = [];
+
+  for (const occ of occurrences) {
+    if (occ.nodeKind !== 'shared') {
+      merged.push(occ);
+      continue;
+    }
+
+    const key = sameStageSharedMergeKey(occ);
+    const kept = keptByKey.get(key);
+    if (!kept) {
+      keptByKey.set(key, occ);
+      merged.push(occ);
+      continue;
+    }
+
+    occurrenceIdRemap.set(occ.occurrenceId, kept.occurrenceId);
+    removedOccurrenceIds.push(occ.occurrenceId);
+  }
+
+  if (occurrenceIdRemap.size === 0) {
+    return { occurrences, edgeOccLinks, removedOccurrenceIds };
+  }
+
+  return {
+    occurrences: merged,
+    edgeOccLinks: remapEdgeOccurrenceLinks(edgeOccLinks, occurrenceIdRemap),
+    removedOccurrenceIds,
+  };
+}
+
 export function buildMergeKey(occ: Occurrence): MergeKey {
   return {
     canonicalNodeId: occ.canonicalNodeId,
@@ -119,8 +165,8 @@ export function buildMergeKey(occ: Occurrence): MergeKey {
 export function buildEdgeOccurrenceLinks(
   envelope: NormalizedPathEnvelope,
   occurrences: Occurrence[],
-): Array<{ fromOccId: string; toOccId: string; originalEdgeId: string; originalEdgeType: string }> {
-  const links: Array<{ fromOccId: string; toOccId: string; originalEdgeId: string; originalEdgeType: string }> = [];
+): EdgeOccurrenceLink[] {
+  const links: EdgeOccurrenceLink[] = [];
   const nodeOccMap = new Map<string, Occurrence[]>();
   for (const occ of occurrences) {
     const list = nodeOccMap.get(occ.canonicalNodeId) ?? [];
@@ -143,12 +189,13 @@ export function buildEdgeOccurrenceLinks(
       const n2 = (node2 as PathNode).nodeId;
       const fromNodeId = pathEdge.displayDirection === 'backward' ? n2 : n1;
       const toNodeId = pathEdge.displayDirection === 'backward' ? n1 : n2;
+      const displayNodes = orientDisplayEdgeNodes(pathEdge.edgeType, fromNodeId, toNodeId, nodeOccMap);
 
-      const fromOccs = nodeOccMap.get(fromNodeId) ?? [];
-      const toOccs = nodeOccMap.get(toNodeId) ?? [];
+      const fromOccs = nodeOccMap.get(displayNodes.fromNodeId) ?? [];
+      const toOccs = nodeOccMap.get(displayNodes.toNodeId) ?? [];
 
-      const fromOcc = pickOccurrenceForBranch(fromOccs, branch.branchId, fromNodeId);
-      const toOcc = pickOccurrenceForBranch(toOccs, branch.branchId, toNodeId);
+      const fromOcc = pickOccurrenceForBranch(fromOccs, branch.branchId, displayNodes.fromNodeId);
+      const toOcc = pickOccurrenceForBranch(toOccs, branch.branchId, displayNodes.toNodeId);
 
       if (!fromOcc || !toOcc) continue;
 
@@ -180,4 +227,58 @@ function pickOccurrenceForBranch(
   if (exact) return exact;
 
   return occs[0];
+}
+
+function orientDisplayEdgeNodes(
+  edgeType: string,
+  fromNodeId: string,
+  toNodeId: string,
+  nodeOccMap: Map<string, Occurrence[]>,
+): { fromNodeId: string; toNodeId: string } {
+  if (edgeType !== 'uiOrProcessorConsumesViewModel') {
+    return { fromNodeId, toNodeId };
+  }
+
+  return getEventModelingDisplayEndpointIds(
+    edgeType,
+    fromNodeId,
+    toNodeId,
+    (nodeId) => nodeOccMap.get(nodeId)?.[0]?.nodeKind,
+  );
+}
+
+function sameStageSharedMergeKey(occ: Occurrence): string {
+  return [
+    occ.canonicalNodeId,
+    occ.stageIndex,
+    occ.lane,
+    occ.displayRole,
+  ].join('\u0000');
+}
+
+function remapEdgeOccurrenceLinks(
+  edgeOccLinks: EdgeOccurrenceLink[],
+  occurrenceIdRemap: Map<string, string>,
+): EdgeOccurrenceLink[] {
+  const deduped: EdgeOccurrenceLink[] = [];
+  const seen = new Set<string>();
+
+  for (const link of edgeOccLinks) {
+    const remapped = {
+      ...link,
+      fromOccId: occurrenceIdRemap.get(link.fromOccId) ?? link.fromOccId,
+      toOccId: occurrenceIdRemap.get(link.toOccId) ?? link.toOccId,
+    };
+    const key = [
+      remapped.fromOccId,
+      remapped.toOccId,
+      remapped.originalEdgeId,
+      remapped.originalEdgeType,
+    ].join('\u0000');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(remapped);
+  }
+
+  return deduped;
 }

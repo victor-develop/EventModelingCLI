@@ -37,4 +37,8 @@ describe('semantic-lift', () => {
     const r = semanticLift('commandCausesEvent' as any, 'e1');
     expect(r.kind).toBe('cmd-to-evt');
   });
+
+  test('rejects structural UI hierarchy edges', () => {
+    expect(() => semanticLift('parentOf' as any, 'e-parent')).toThrow('Unknown edge type');
+  });
 });

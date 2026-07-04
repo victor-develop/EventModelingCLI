@@ -9,7 +9,6 @@ const EDGE_COLOR: Record<string, string> = {
   'evt-to-viewModel': '#b86b4b',
   'viewModel-to-shared': '#705c8f',
   'evt-to-shared': '#64706c',
-  'shared-to-shared': '#64706c',
 };
 
 export function toReactFlowEdges(snapshot: VisualizationSnapshot): Edge<OrthogonalEdgeData>[] {

@@ -1,4 +1,5 @@
 import type { EdgeType, Node, Edge } from '../domain/types';
+import { EVENT_MODELING_EDGE_TYPES } from '../domain/event-modeling-edges';
 import type { Graph, WalkBranch } from '../graph/graph-builder';
 import { walkGraph, resolveLaneMap } from '../graph/graph-builder';
 import { toDisplayNodeKind } from '../layout/types';
@@ -81,7 +82,7 @@ export function buildWalkEnvelope(args: {
   direction: SnapshotDirection;
   hops: number;
 }): NormalizedPathEnvelope {
-  const walkResult = walkGraph(args.graph, args.focusNodeId, args.direction, undefined, args.hops);
+  const walkResult = walkGraph(args.graph, args.focusNodeId, args.direction, EVENT_MODELING_EDGE_TYPES, args.hops);
   return buildEnvelopeFromWalkBranches({
     graph: args.graph,
     focusNodeId: args.focusNodeId,

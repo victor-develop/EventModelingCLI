@@ -1,4 +1,5 @@
 import { buildGraph, resolveNodeId } from '../graph/graph-builder';
+import { toEventModelingDisplayEdges } from '../domain/event-modeling-edges';
 import type { LayoutState } from '../layout/types';
 import { LayoutEngine } from '../layout/layout-engine';
 import type { Workspace } from '../workspace/workspace';
@@ -33,8 +34,9 @@ export function buildVisualizationSnapshot(args: {
 
   const nodes = args.workspace.listNodes();
   const edges = args.workspace.listEdges();
-  const graph = buildGraph(nodes, edges);
-  const resolvedFocus = resolveNodeId(graph, args.focus);
+  const domainGraph = buildGraph(nodes, edges);
+  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const resolvedFocus = resolveNodeId(domainGraph, args.focus);
   if (!resolvedFocus) {
     throw new VisualizationSnapshotError(
       'NOT_FOUND',
@@ -62,7 +64,7 @@ export function buildVisualizationSnapshot(args: {
       occurrences: [],
       renderedEdges: [],
       swimlaneRects: computeVisibleSwimlaneRects([]),
-      domainNodes: collectDomainNodes({ envelope, graph, focusNodeId: resolvedFocus }),
+      domainNodes: collectDomainNodes({ envelope, graph: domainGraph, focusNodeId: resolvedFocus }),
       domainEdges: {},
       laneMap: createVisibleLaneMap(),
     };
@@ -80,8 +82,8 @@ export function buildVisualizationSnapshot(args: {
     occurrences: normalizeOccurrencesForViewer(coreOccurrences),
     renderedEdges: normalizeRenderedEdgesForViewer(coreEdges),
     swimlaneRects: computeVisibleSwimlaneRects(coreOccurrences),
-    domainNodes: collectDomainNodes({ envelope, graph, focusNodeId: resolvedFocus }),
-    domainEdges: collectDomainEdges({ envelope, graph }),
+    domainNodes: collectDomainNodes({ envelope, graph: domainGraph, focusNodeId: resolvedFocus }),
+    domainEdges: collectDomainEdges({ envelope, graph: domainGraph }),
     laneMap: createVisibleLaneMap(),
   };
 }

@@ -320,29 +320,101 @@ describe('LayoutEngine', () => {
     }
   });
 
-  test('duplicate shared anchor branches route left-to-right', () => {
+  test('appendExploreResult merges same-stage shared duplicate without moving the existing occurrence', () => {
     const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
-    const state = engine.initLayout(makeEnvelope('ui.screen.order-detail', [
+    const state = engine.initLayout(makeEnvelope('view.order-detail', [
       {
         id: 'b1',
         dir: 'forward',
         path: [
+          { type: 'node', nodeId: 'view.order-detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'consume-a', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'parent-a', edgeType: 'parentOf', displayDirection: 'forward' as const },
-          { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
+        ],
+      },
+    ]));
+    const viewOcc = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'view.order-detail')!;
+    const existingUi = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'ui.screen.order-detail')!;
+    const originalUiStage = existingUi.stageIndex;
+
+    const patch = engine.appendExploreResult(state, viewOcc.occurrenceId, makeEnvelope('view.order-detail', [
+      {
+        id: 'b2',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'view.order-detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'consume-b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
+        ],
+      },
+    ]));
+
+    const uiOccurrences = Object.values(state.occurrences).filter(o => o.canonicalNodeId === 'ui.screen.order-detail');
+    expect(uiOccurrences).toHaveLength(1);
+    expect(uiOccurrences[0].occurrenceId).toBe(existingUi.occurrenceId);
+    expect(uiOccurrences[0].stageIndex).toBe(originalUiStage);
+    expect(patch.addedOccurrences).toHaveLength(0);
+    expect(patch.addedEdges).toHaveLength(1);
+    expect(patch.addedEdges[0].fromOccurrenceId).toBe(viewOcc.occurrenceId);
+    expect(patch.addedEdges[0].toOccurrenceId).toBe(existingUi.occurrenceId);
+    expect(patch.addedEdges[0].meta.originalEdgeId).toBe('consume-b');
+  });
+
+  test('prependExploreResult emits a distinct edge when same-stage compaction removes the added duplicate', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('cmd.submit-order', [
+      {
+        id: 'b1',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.checkout', nodeKind: 'ui.screen' },
           { type: 'edge', edgeId: 'issue-a', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
-          { type: 'node', nodeId: 'cmd.confirm-receipt', nodeKind: 'cmd' },
+          { type: 'node', nodeId: 'cmd.submit-order', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+    const cmdOcc = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'cmd.submit-order')!;
+    const existingUi = Object.values(state.occurrences).find(o => o.canonicalNodeId === 'ui.screen.checkout')!;
+
+    const patch = engine.prependExploreResult(state, cmdOcc.occurrenceId, makeEnvelope('cmd.submit-order', [
+      {
+        id: 'b2',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.checkout', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'issue-b', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'cmd.submit-order', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+
+    expect(Object.values(state.occurrences).filter(o => o.canonicalNodeId === 'ui.screen.checkout')).toHaveLength(1);
+    expect(patch.addedOccurrences).toHaveLength(0);
+    expect(patch.addedEdges).toHaveLength(1);
+    expect(patch.addedEdges[0].fromOccurrenceId).toBe(existingUi.occurrenceId);
+    expect(patch.addedEdges[0].toOccurrenceId).toBe(cmdOcc.occurrenceId);
+    expect(patch.addedEdges[0].meta.originalEdgeId).toBe('issue-b');
+  });
+
+  test('duplicate shared branch targets route left-to-right', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('view.tracking-status', [
+      {
+        id: 'b1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'view.tracking-status', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'consume-a', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
         ],
       },
       {
         id: 'b2',
         dir: 'forward',
         path: [
-          { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'parent-b', edgeType: 'parentOf', displayDirection: 'forward' as const },
-          { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
-          { type: 'edge', edgeId: 'consume-b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'view.tracking-status', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'consume-b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
         ],
       },
     ]));
@@ -351,8 +423,9 @@ describe('LayoutEngine', () => {
     expect(edges.length).toBeGreaterThan(0);
     expect(edges.every((edge) => edge.points[0]![0] <= edge.points[edge.points.length - 1]![0])).toBe(true);
 
-    const secondSection = Object.values(state.occurrences)
-      .find((occ) => occ.canonicalNodeId === 'ui.section.tracking' && occ.branchClusterId === 'b2')!;
-    expect(secondSection.stageIndex).toBeGreaterThan(0);
+    const sections = Object.values(state.occurrences)
+      .filter((occ) => occ.canonicalNodeId === 'ui.section.tracking');
+    expect(sections).toHaveLength(1);
+    expect(sections[0].stageIndex).toBe(4);
   });
 });

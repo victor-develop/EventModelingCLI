@@ -1,5 +1,6 @@
 import { Workspace } from '../workspace/workspace';
 import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeType } from '../domain/types';
+import { toEventModelingDisplayEdges } from '../domain/event-modeling-edges';
 import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId, findRoots } from '../graph/graph-builder';
 import { lintCanonicalId } from '../validation/lint';
 import { validate } from '../validation/validate';
@@ -738,7 +739,7 @@ export function neighbors(ws: Workspace, nodeId: string, direction: string = 'bo
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const graph = buildGraph(nodes, edges);
+  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
   const results = getNeighbors(graph, nodeId, direction as 'in' | 'out' | 'both', edgeTypes as any[], limit);
   return okResult('em neighbors', {
     center: nodeId,
@@ -753,7 +754,7 @@ export function walk(ws: Workspace, fromId: string, direction: string = 'forward
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const graph = buildGraph(nodes, edges);
+  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
   const result = walkGraph(graph, fromId, direction as any, edgeTypes as any[], maxHops, limit);
   const data: Record<string, unknown> = {
     from: fromId,
@@ -778,7 +779,7 @@ export function trace(ws: Workspace, fromId: string, toId: string, maxHops?: num
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const graph = buildGraph(nodes, edges);
+  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
   const paths = tracePath(graph, fromId, toId, maxHops);
   return okResult('em trace', { paths }, { projectId: ws.getManifest()!.id });
 }
@@ -788,7 +789,7 @@ export function graph(ws: Workspace, focusId?: string, depth?: number, format: s
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const g = buildGraph(nodes, edges);
+  const g = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
   const mermaidStr = toMermaid(g, focusId, depth);
   return okResult('em graph', { format, graph: mermaidStr }, { projectId: ws.getManifest()!.id });
 }

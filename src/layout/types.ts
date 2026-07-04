@@ -13,8 +13,7 @@ export type DisplayEdgeKind =
   | 'cmd-to-evt'
   | 'evt-to-viewModel'
   | 'viewModel-to-shared'
-  | 'evt-to-shared'
-  | 'shared-to-shared';
+  | 'evt-to-shared';
 
 export function toDisplayLane(kind: DisplayNodeKind): DisplayLane {
   switch (kind) {

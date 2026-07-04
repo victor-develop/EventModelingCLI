@@ -3,14 +3,13 @@ import { DisplayEdge, DisplayEdgeKind, DisplayNodeKind } from './types';
 
 let deCounter = 0;
 
-const EDGE_LIFT_MAP: Record<string, { kind: DisplayEdgeKind; from: DisplayNodeKind; to: DisplayNodeKind }> = {
+const EDGE_LIFT_MAP: Partial<Record<EdgeType, { kind: DisplayEdgeKind; from: DisplayNodeKind; to: DisplayNodeKind }>> = {
   roleUsesUIToIssueCommand: { kind: 'shared-to-cmd', from: 'shared', to: 'cmd' },
   processorOrTriggerIssuesCommand: { kind: 'shared-to-cmd', from: 'shared', to: 'cmd' },
   commandCausesEvent: { kind: 'cmd-to-evt', from: 'cmd', to: 'evt' },
   eventRefreshesViewModel: { kind: 'evt-to-viewModel', from: 'evt', to: 'viewModel' },
   uiOrProcessorConsumesViewModel: { kind: 'viewModel-to-shared', from: 'viewModel', to: 'shared' },
   eventUpdatesProcessor: { kind: 'evt-to-shared', from: 'evt', to: 'shared' },
-  parentOf: { kind: 'shared-to-shared', from: 'shared', to: 'shared' },
 };
 
 export function semanticLift(edgeType: EdgeType, originalEdgeId: string, displayEdgeId?: string): DisplayEdge {

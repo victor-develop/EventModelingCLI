@@ -1,4 +1,5 @@
 import { Node, Edge, EdgeType, NodeKind } from '../domain/types';
+import { EVENT_MODELING_EDGE_TYPE_SET } from '../domain/event-modeling-edges';
 
 export interface Graph {
   nodes: Map<string, Node>;
@@ -342,15 +343,6 @@ export interface RootNode {
   displayName: string;
 }
 
-const FLOW_INCOMING_TYPES: Set<EdgeType> = new Set([
-  'commandCausesEvent',
-  'eventRefreshesViewModel',
-  'eventUpdatesProcessor',
-  'uiOrProcessorConsumesViewModel',
-  'processorOrTriggerIssuesCommand',
-  'roleUsesUIToIssueCommand',
-]);
-
 const ROOT_ELIGIBLE_KINDS: Set<string> = new Set([
   'cmd', 'trigger',
   'ui.app', 'ui.area', 'ui.screen', 'ui.section', 'ui.component', 'ui.form',
@@ -367,7 +359,7 @@ export function findRoots(graph: Graph): RootNode[] {
     if (!ROOT_ELIGIBLE_KINDS.has(node.kind)) continue;
 
     const incomingEdges = graph.incoming.get(node.canonicalId) ?? [];
-    const hasFlowIncoming = incomingEdges.some(e => FLOW_INCOMING_TYPES.has(e.type));
+    const hasFlowIncoming = incomingEdges.some(e => EVENT_MODELING_EDGE_TYPE_SET.has(e.type));
 
     if (!hasFlowIncoming) {
       roots.push({

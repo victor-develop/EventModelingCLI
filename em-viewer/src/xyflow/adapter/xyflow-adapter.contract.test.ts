@@ -1,12 +1,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
+import type { Edge, Node } from '@xyflow/react';
+import type { LayoutPatch, RenderedEdge } from '@em/layout/types';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
 import { applyLayoutPatchToReactFlow } from './applyLayoutPatch';
 import { toReactFlowEdges } from './toReactFlowEdges';
 import { toReactFlowNodes } from './toReactFlowNodes';
 
 const ROOT = path.resolve(__dirname, '../../../../__tests__/fixtures/xyflow-spec/04-xyflow-adapter-components');
+
+type FixtureCompatiblePatch = LayoutPatch & {
+  addedRenderedEdges?: RenderedEdge[];
+  updatedRenderedEdges?: RenderedEdge[];
+  type?: string;
+};
 
 describe('xyflow adapter contract fixtures', () => {
   test('converts a VisualizationSnapshot into React Flow nodes and edges', () => {
@@ -22,8 +30,8 @@ describe('xyflow adapter contract fixtures', () => {
 
   test('applies an append patch without regenerating the full React Flow state', () => {
     const caseRoot = path.join(ROOT, 'contract-tests-layoutpatch-adapter/tc01-append-right-patch');
-    const previous = readJsonFence<{ nodes: any[]; edges: any[] }>(path.join(caseRoot, 'input-previous-react-flow-state.md'));
-    const patch = readJsonFence<any>(path.join(caseRoot, 'input-layoutpatch.md'));
+    const previous = readJsonFence<{ nodes: Node[]; edges: Edge[] }>(path.join(caseRoot, 'input-previous-react-flow-state.md'));
+    const patch = readJsonFence<FixtureCompatiblePatch>(path.join(caseRoot, 'input-layoutpatch.md'));
     const expected = readJsonFence(path.join(caseRoot, 'output-next-react-flow-state.md'));
 
     expect(applyLayoutPatchToReactFlow({
@@ -59,8 +67,8 @@ describe('xyflow adapter contract fixtures', () => {
     };
 
     const next = applyLayoutPatchToReactFlow({
-      patch: patch as any,
-      previousNodes: previousNodes as any,
+      patch,
+      previousNodes: previousNodes as Node[],
       previousEdges: [],
       snapshotContext: { domainNodes: {}, laneMap: {} },
     });

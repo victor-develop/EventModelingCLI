@@ -1,7 +1,8 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
-import { Position, ReactFlowProvider } from '@xyflow/react';
+import { Position, ReactFlowProvider, type Node, type NodeProps } from '@xyflow/react';
+import type { ReactFlowNodeData, SwimlaneNodeData, FrontierHandleData } from '../adapter/types';
 import { SwimlaneGroupNode } from './SwimlaneGroupNode';
 import { CommandNode } from './CommandNode';
 import { OrthogonalDisplayEdge } from './OrthogonalDisplayEdge';
@@ -9,7 +10,8 @@ import { FrontierHandleNode } from './FrontierHandleNode';
 
 describe('xyflow components', () => {
   test('renders a swimlane group label', () => {
-    render(<SwimlaneGroupNode {...({ id: 'lane:shared', data: { lane: 'shared', label: 'shared' } } as any)} />);
+    const props = { id: 'lane:shared', data: { lane: 'shared', label: 'shared' } } as unknown as NodeProps<Node<SwimlaneNodeData>>;
+    render(<SwimlaneGroupNode {...props} />);
     expect(screen.getByText('shared')).toBeInTheDocument();
   });
 
@@ -27,9 +29,9 @@ describe('xyflow components', () => {
               visibleLane: 'commandViewModel',
               lockLevel: 'hard',
             },
-          } as any)}
+          } as unknown as NodeProps<Node<ReactFlowNodeData>>)}
         />
-      </ReactFlowProvider> as any,
+      </ReactFlowProvider>,
     );
 
     expect(screen.getByText('cmd')).toBeInTheDocument();
@@ -55,9 +57,9 @@ describe('xyflow components', () => {
             targetPosition: Position.Left,
             markerEnd: 'url(#edge-arrow)',
             data: { kind: 'cmd-to-evt' },
-          } as any)}
+          } as unknown as Parameters<typeof OrthogonalDisplayEdge>[0])}
         />
-      </svg> as any,
+      </svg>,
     );
 
     const path = container.querySelector('path.em-edge-path');
@@ -68,7 +70,11 @@ describe('xyflow components', () => {
   });
 
   test('renders a frontier handle node', () => {
-    render(<FrontierHandleNode {...({ id: 'frontier:right', data: { direction: 'right', label: 'Explore right' } } as any)} />);
+    const props = {
+      id: 'frontier:right',
+      data: { direction: 'right', label: 'Explore right' },
+    } as unknown as NodeProps<Node<FrontierHandleData>>;
+    render(<FrontierHandleNode {...props} />);
     expect(screen.getByLabelText('Explore right')).toBeInTheDocument();
   });
 });

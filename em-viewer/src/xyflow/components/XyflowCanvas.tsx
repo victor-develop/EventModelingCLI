@@ -60,6 +60,7 @@ export function XyflowCanvas({
   useEffect(() => {
     const nextNodes = toReactFlowNodes(snapshot, { includeFrontierHandles: true });
     const nextEdges = toReactFlowEdges(snapshot);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- React Flow controlled state must be reset when a new snapshot arrives.
     setNodes(nextNodes);
     setEdges(nextEdges);
     nodesRef.current = nextNodes;

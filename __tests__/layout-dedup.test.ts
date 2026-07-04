@@ -159,6 +159,44 @@ describe('canonical dedup', () => {
     }
   });
 
+  test('same-stage UI occurrences merge and remap edges to the kept occurrence', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const envelope = makeEnvelope('hotel.view.BookingSummary', [
+      {
+        id: 'summary_to_screen',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'hotel.view.BookingSummary', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'e_view_screen_a', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.screen.order-detail-screen', nodeKind: 'ui.screen' },
+        ],
+      },
+      {
+        id: 'summary_to_screen_again',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'hotel.view.BookingSummary', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'e_view_screen_b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.screen.order-detail-screen', nodeKind: 'ui.screen' },
+        ],
+      },
+    ]);
+
+    const state = engine.initLayout(envelope);
+    const allOccs = Object.values(state.occurrences);
+    const screenOccs = allOccs.filter((o) => o.canonicalNodeId === 'ui.screen.order-detail-screen');
+
+    expect(screenOccs).toHaveLength(1);
+    expect(screenOccs[0].stageIndex).toBe(4);
+
+    const edges = Object.values(state.displayEdges);
+    expect(edges).toHaveLength(2);
+    for (const edge of edges) {
+      expect(edge.toOccurrenceId).toBe(screenOccs[0].occurrenceId);
+      expect(edge.kind).toBe('viewModel-to-shared');
+    }
+  });
+
   test('full hotel booking scenario: no duplicate cmds, evts, or viewModels', () => {
     const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
     const envelope = makeEnvelope('hotel.cmd.BookRoom', [

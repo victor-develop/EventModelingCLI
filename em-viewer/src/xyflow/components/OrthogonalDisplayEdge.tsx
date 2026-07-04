@@ -9,7 +9,6 @@ const EDGE_CLASS: Record<string, string> = {
   'evt-to-viewModel': 'edge-evt-view',
   'viewModel-to-shared': 'edge-view-shared',
   'evt-to-shared': 'edge-evt-shared',
-  'shared-to-shared': 'edge-shared-shared',
 };
 
 export function OrthogonalDisplayEdge({

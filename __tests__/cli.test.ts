@@ -327,6 +327,30 @@ describe('Event Modeling CLI', () => {
       expect((r.data as any).format).toBe('mermaid');
       expect(typeof (r.data as any).graph).toBe('string');
     });
+
+    test('event-model graph commands exclude UI hierarchy edges', () => {
+      em('ui', 'add', 'app', '--name', 'Orders');
+      em('ui', 'add', 'screen', '--name', 'Order Detail', '--parent', 'ui.app.orders');
+
+      const neighbors = em('neighbors', '--node', 'ui.app.orders', '--direction', 'out');
+      expect(neighbors.ok).toBe(true);
+      expect((neighbors.data.neighbors as any[]).map((item) => item.edgeType)).not.toContain('parentOf');
+      expect(neighbors.data.neighbors).toEqual([]);
+
+      const walk = em('walk', '--from', 'ui.app.orders', '--direction', 'forward', '--max-hops', '2');
+      expect(walk.ok).toBe(true);
+      const branches = ((walk.data.subgraph as any).branches ?? []) as any[];
+      expect(branches).toEqual([]);
+
+      const trace = em('trace', '--from', 'ui.app.orders', '--to', 'ui.screen.order-detail', '--max-hops', '2');
+      expect(trace.ok).toBe(true);
+      expect(trace.data.paths).toEqual([]);
+
+      const graph = em('graph', '--format', 'mermaid');
+      expect(graph.ok).toBe(true);
+      expect((graph.data.graph as string)).not.toContain('ui.app.orders');
+      expect((graph.data.graph as string)).not.toContain('ui.screen.order-detail');
+    });
   });
 
   describe('validate and review', () => {

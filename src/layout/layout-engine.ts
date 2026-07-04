@@ -10,7 +10,13 @@ import {
   SwimlaneRect,
 } from './types';
 import { semanticLift, resetDeCounter } from './semantic-lift';
-import { buildOccurrences, mergeOccurrences, buildEdgeOccurrenceLinks } from './occurrence';
+import {
+  buildOccurrences,
+  mergeOccurrences,
+  buildEdgeOccurrenceLinks,
+  mergeSameStageSharedOccurrences,
+} from './occurrence';
+import type { EdgeOccurrenceLink } from './occurrence';
 import { assignStages } from './stage';
 import { solveLaneRows } from './row-solver';
 import { routeEdges } from './edge-router';
@@ -175,6 +181,83 @@ function maxOrdinalFromIds(ids: string[], prefix: string): number {
   return max;
 }
 
+function assignExploreStages(
+  occurrences: Occurrence[],
+  edgeOccLinks: EdgeOccurrenceLink[],
+  previous: Record<string, Occurrence>,
+  sourceOccurrenceId: string,
+  revealDirection: 'left' | 'right',
+  config: LayoutConfig,
+): Occurrence[] {
+  const result = occurrences.map(o => ({ ...o }));
+  const byId = new Map(result.map(o => [o.occurrenceId, o]));
+  const fixedIds = new Set(Object.keys(previous));
+  const assignedIds = new Set<string>();
+
+  for (const occ of result) {
+    const prev = previous[occ.occurrenceId];
+    if (!prev) continue;
+    occ.stageIndex = prev.stageIndex;
+    assignedIds.add(occ.occurrenceId);
+  }
+
+  const sourceStage = previous[sourceOccurrenceId]?.stageIndex ?? 0;
+  const setStage = (occurrenceId: string, stageIndex: number, mode: 'min' | 'max'): boolean => {
+    const occ = byId.get(occurrenceId);
+    if (!occ || fixedIds.has(occurrenceId)) return false;
+    if (!assignedIds.has(occurrenceId)) {
+      occ.stageIndex = stageIndex;
+      assignedIds.add(occurrenceId);
+      return true;
+    }
+    const nextStage = mode === 'max'
+      ? Math.max(occ.stageIndex, stageIndex)
+      : Math.min(occ.stageIndex, stageIndex);
+    if (nextStage === occ.stageIndex) return false;
+    occ.stageIndex = nextStage;
+    return true;
+  };
+
+  const iterationLimit = Math.max(1, result.length * Math.max(1, edgeOccLinks.length));
+  for (let iteration = 0; iteration < iterationLimit; iteration++) {
+    let changed = false;
+    for (const link of edgeOccLinks) {
+      const from = byId.get(link.fromOccId);
+      const to = byId.get(link.toOccId);
+      if (!from || !to) continue;
+
+      if (assignedIds.has(link.fromOccId)) {
+        changed = setStage(link.toOccId, from.stageIndex + 1, 'max') || changed;
+      }
+      if (assignedIds.has(link.toOccId)) {
+        changed = setStage(link.fromOccId, to.stageIndex - 1, 'min') || changed;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const fallbackStage = sourceStage + (revealDirection === 'right' ? 1 : -1);
+  for (const occ of result) {
+    if (!assignedIds.has(occ.occurrenceId)) {
+      occ.stageIndex = fallbackStage;
+    }
+    occ.x = occ.stageIndex * config.stageGap;
+  }
+
+  return result;
+}
+
+function originalEdgeIdsFromState(displayEdges: Record<string, RenderedEdge>): Set<string> {
+  const result = new Set<string>();
+  for (const edge of Object.values(displayEdges)) {
+    const originalEdgeId = edge.meta?.originalEdgeId;
+    if (typeof originalEdgeId === 'string') {
+      result.add(originalEdgeId);
+    }
+  }
+  return result;
+}
+
 export class LayoutEngine {
   private config: LayoutConfig;
 
@@ -190,12 +273,13 @@ export class LayoutEngine {
     const laneOrder = computeLaneOrder(occurrences);
     const dynamicConfig = { ...this.config, laneBaseY: computeDynamicLaneBaseY(laneOrder) };
 
-    const edgeOccLinks = buildEdgeOccurrenceLinks(envelope, occurrences);
+    let edgeOccLinks = buildEdgeOccurrenceLinks(envelope, occurrences);
 
     const anchorOcc = occurrences.find(o => o.canonicalNodeId === envelope.anchor.nodeId);
     const anchorOccId = anchorOcc?.occurrenceId ?? occurrences[0]?.occurrenceId ?? '';
 
     occurrences = assignStages(occurrences, edgeOccLinks as any, anchorOccId, dynamicConfig);
+    ({ occurrences, edgeOccLinks } = mergeSameStageSharedOccurrences(occurrences, edgeOccLinks));
 
     const displayEdges: DisplayEdge[] = [];
     for (let i = 0; i < edgeOccLinks.length; i++) {
@@ -209,7 +293,10 @@ export class LayoutEngine {
       toOccurrenceId: edgeOccLinks[i]?.toOccId ?? '',
       kind: de.kind,
       points: [],
-      meta: {},
+      meta: {
+        originalEdgeId: edgeOccLinks[i]?.originalEdgeId,
+        originalEdgeType: edgeOccLinks[i]?.originalEdgeType,
+      },
     }));
 
     occurrences = solveLaneRows(occurrences, renderedEdges, dynamicConfig);
@@ -290,40 +377,53 @@ export class LayoutEngine {
     const laneOrder = computeLaneOrder(merged);
     const dynamicConfig = { ...this.config, laneBaseY: computeDynamicLaneBaseY(laneOrder) };
 
-    const allEdgeLinks = buildEdgeOccurrenceLinks(envelope, merged);
+    let allEdgeLinks = buildEdgeOccurrenceLinks(envelope, merged);
 
     const anchorOcc = merged.find(o => o.occurrenceId === sourceOccurrenceId);
     const anchorId = anchorOcc?.occurrenceId ?? sourceOccurrenceId;
 
-    const staged = assignStages(merged, allEdgeLinks as any, anchorId, dynamicConfig);
-    const stagedAdded = staged.filter(o => added.some(a => a.occurrenceId === o.occurrenceId));
+    const staged = assignExploreStages(
+      merged,
+      allEdgeLinks,
+      state.occurrences,
+      anchorId,
+      revealDirection,
+      dynamicConfig,
+    );
+    const compacted = mergeSameStageSharedOccurrences(staged, allEdgeLinks);
+    allEdgeLinks = compacted.edgeOccLinks;
+    const compactedOccurrences = compacted.occurrences;
+    const addedAfterCompaction = added.filter(a => !compacted.removedOccurrenceIds.includes(a.occurrenceId));
+    const stagedAdded = compactedOccurrences.filter(o => addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId));
+    const existingOriginalEdgeIds = originalEdgeIdsFromState(state.displayEdges);
 
-    const newDisplayEdges: DisplayEdge[] = [];
     const newRenderedEdges: RenderedEdge[] = [];
     let edgeOrdinal = maxOrdinalFromIds(Object.keys(state.displayEdges), 'de');
     for (const link of allEdgeLinks) {
-      const isNew = added.some(a => a.occurrenceId === link.fromOccId || a.occurrenceId === link.toOccId);
+      const isNew = !existingOriginalEdgeIds.has(link.originalEdgeId);
       if (!isNew) continue;
       edgeOrdinal += 1;
       const de = semanticLift(link.originalEdgeType as any, link.originalEdgeId, `de_${edgeOrdinal}`);
-      newDisplayEdges.push(de);
       newRenderedEdges.push({
         displayEdgeId: de.displayEdgeId,
         fromOccurrenceId: link.fromOccId,
         toOccurrenceId: link.toOccId,
         kind: de.kind,
         points: [],
-        meta: {},
+        meta: {
+          originalEdgeId: link.originalEdgeId,
+          originalEdgeType: link.originalEdgeType,
+        },
       });
     }
 
-    const stagedExisting = staged.filter(o => !added.some(a => a.occurrenceId === o.occurrenceId));
+    const stagedExisting = compactedOccurrences.filter(o => !addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId));
     const solved = solveLaneRows([...stagedExisting, ...stagedAdded], newRenderedEdges, dynamicConfig);
 
     const swimlaneRects = computeSwimlaneRects(solved);
     const realigned = realignOccurrencesToRects(solved, swimlaneRects);
-    const stableRealigned = restoreExistingOccurrencePositions(realigned, added, state.occurrences);
-    const solvedAdded = stableRealigned.filter(o => added.some(a => a.occurrenceId === o.occurrenceId));
+    const stableRealigned = restoreExistingOccurrencePositions(realigned, addedAfterCompaction, state.occurrences);
+    const solvedAdded = stableRealigned.filter(o => addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId));
 
     const occMap: Record<string, Occurrence> = {};
     for (const o of stableRealigned) occMap[o.occurrenceId] = o;
@@ -332,7 +432,7 @@ export class LayoutEngine {
 
     const updatedExisting: Occurrence[] = [];
     for (const o of stableRealigned) {
-      if (!added.some(a => a.occurrenceId === o.occurrenceId)) {
+      if (!addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId)) {
         const prev = state.occurrences[o.occurrenceId];
         if (prev && (prev.x !== o.x || prev.y !== o.y || prev.stageIndex !== o.stageIndex || prev.rowIndex !== o.rowIndex)) {
           updatedExisting.push(o);

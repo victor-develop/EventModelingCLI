@@ -3,6 +3,7 @@ import cors from 'cors';
 import { Workspace } from '../workspace/workspace';
 import { buildGraph, walkGraph, findRoots, resolveLaneMap } from '../graph/graph-builder';
 import type { Node, Edge } from '../domain/types';
+import { EVENT_MODELING_EDGE_TYPES, toEventModelingDisplayEdges } from '../domain/event-modeling-edges';
 import type { WalkBranch } from '../graph/graph-builder';
 import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
 import type { SnapshotDirection } from '../viewer-contract';
@@ -24,9 +25,10 @@ export function createServerApp(ws: Workspace): {
 
   const nodes = manifest ? ws.listNodes() : [];
   const edges = manifest ? ws.listEdges() : [];
-  const graph = buildGraph(nodes, edges);
+  const domainGraph = buildGraph(nodes, edges);
+  const eventModelingGraph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
 
-  const laneMap = resolveLaneMap(graph);
+  const laneMap = resolveLaneMap(domainGraph);
 
   const nodeMap = new Map<string, Node>();
   for (const n of nodes) nodeMap.set(n.canonicalId, n);
@@ -88,7 +90,7 @@ export function createServerApp(ws: Workspace): {
       return;
     }
 
-    const rootNodes = findRoots(graph);
+    const rootNodes = findRoots(domainGraph);
     const rootIds = rootNodes.map(r => r.canonicalId);
     res.json({
       roots: rootNodes.map(r => ({
@@ -108,7 +110,7 @@ export function createServerApp(ws: Workspace): {
     }
 
     const focus = (req.query.focus as string) || nodes[0]?.canonicalId || '';
-    const result = walkGraph(graph, focus, 'both', undefined, 1);
+    const result = walkGraph(eventModelingGraph, focus, 'both', EVENT_MODELING_EDGE_TYPES, 1);
     const collectedNodes = collectNodes(result.branches);
 
     res.json({
@@ -173,7 +175,7 @@ export function createServerApp(ws: Workspace): {
       return;
     }
 
-    const result = walkGraph(graph, from, direction, undefined, hops);
+    const result = walkGraph(eventModelingGraph, from, direction, EVENT_MODELING_EDGE_TYPES, hops);
     const collectedNodes = collectNodes(result.branches);
 
     res.json({

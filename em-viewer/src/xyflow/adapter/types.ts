@@ -15,7 +15,6 @@ export type SwimlaneNodeData = {
 
 export type OrthogonalEdgeData = {
   kind: string;
-  points: [number, number][];
 };
 
 export type FrontierHandleData = {

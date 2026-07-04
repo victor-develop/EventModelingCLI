@@ -121,4 +121,39 @@ describe('stage assignment', () => {
     const cmd = result.find(o => o.occurrenceId === 'occ_cmd')!;
     expect(cmd.stageIndex).toBe(1);
   });
+
+  test('duplicate shared anchor branches still advance shared-to-shared children', () => {
+    const occs: Occurrence[] = [
+      {
+        occurrenceId: 'occ_screen_a', canonicalNodeId: 'ui.screen.order-detail', nodeKind: 'shared',
+        lane: 'nonRole', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
+        branchClusterId: 'b1', lockLevel: 'free', x: 0, y: 0, width: 220, height: 56,
+      },
+      {
+        occurrenceId: 'occ_section_a', canonicalNodeId: 'ui.section.tracking', nodeKind: 'shared',
+        lane: 'nonRole', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
+        branchClusterId: 'b1', lockLevel: 'free', x: 0, y: 0, width: 220, height: 56,
+      },
+      {
+        occurrenceId: 'occ_screen_b', canonicalNodeId: 'ui.screen.order-detail', nodeKind: 'shared',
+        lane: 'nonRole', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
+        branchClusterId: 'b2', lockLevel: 'free', x: 0, y: 0, width: 220, height: 56,
+      },
+      {
+        occurrenceId: 'occ_section_b', canonicalNodeId: 'ui.section.tracking', nodeKind: 'shared',
+        lane: 'nonRole', stageIndex: 0, rowIndex: 0, displayRole: 'ui',
+        branchClusterId: 'b2', lockLevel: 'free', x: 0, y: 0, width: 220, height: 56,
+      },
+    ];
+
+    const result = assignStages(occs, [
+      { fromOccId: 'occ_screen_a', toOccId: 'occ_section_a', displayEdge: { kind: 'shared-to-shared' } },
+      { fromOccId: 'occ_screen_b', toOccId: 'occ_section_b', displayEdge: { kind: 'shared-to-shared' } },
+    ] as any, 'occ_screen_a');
+
+    expect(result.find(o => o.occurrenceId === 'occ_screen_a')!.stageIndex).toBe(0);
+    expect(result.find(o => o.occurrenceId === 'occ_screen_b')!.stageIndex).toBe(0);
+    expect(result.find(o => o.occurrenceId === 'occ_section_a')!.stageIndex).toBe(1);
+    expect(result.find(o => o.occurrenceId === 'occ_section_b')!.stageIndex).toBe(1);
+  });
 });

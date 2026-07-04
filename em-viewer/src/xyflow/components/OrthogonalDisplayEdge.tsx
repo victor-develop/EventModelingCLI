@@ -1,4 +1,4 @@
-import type { EdgeProps, Edge } from '@xyflow/react';
+import { BaseEdge, getSmoothStepPath, type EdgeProps, type Edge } from '@xyflow/react';
 import type { OrthogonalEdgeData } from '../adapter/types';
 
 type OrthogonalProps = EdgeProps<Edge<OrthogonalEdgeData>>;
@@ -12,36 +12,42 @@ const EDGE_CLASS: Record<string, string> = {
   'shared-to-shared': 'edge-shared-shared',
 };
 
-export function OrthogonalDisplayEdge({ id, data, selected }: OrthogonalProps) {
-  const points = data?.points ?? [];
-  if (points.length < 2) return null;
-
-  const markerId = `arrow-${id}`;
-  const path = pointsToPath(points);
+export function OrthogonalDisplayEdge({
+  id,
+  data,
+  selected,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  markerEnd,
+  style,
+  interactionWidth,
+}: OrthogonalProps) {
+  const [path] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 12,
+  });
   const edgeClass = EDGE_CLASS[data?.kind ?? ''] ?? 'edge-default';
 
   return (
-    <g className={`em-edge ${edgeClass} ${selected ? 'is-selected' : ''}`}>
-      <defs>
-        <marker
-          id={markerId}
-          viewBox="0 0 10 10"
-          refX="9"
-          refY="5"
-          markerWidth="7"
-          markerHeight="7"
-          orient="auto-start-reverse"
-        >
-          <path d="M 0 0 L 10 5 L 0 10 z" />
-        </marker>
-      </defs>
-      <path className="em-edge-path" d={path} markerEnd={`url(#${markerId})`} />
-    </g>
+    <BaseEdge
+      id={id}
+      path={path}
+      markerEnd={markerEnd}
+      className={`em-edge-path ${edgeClass} ${selected ? 'is-selected' : ''}`}
+      style={{
+        ...style,
+        strokeWidth: selected ? 3.2 : style?.strokeWidth,
+      }}
+      interactionWidth={interactionWidth ?? 24}
+    />
   );
-}
-
-function pointsToPath(points: [number, number][]): string {
-  const [first, ...rest] = points;
-  if (!first) return '';
-  return [`M ${first[0]} ${first[1]}`, ...rest.map((point) => `L ${point[0]} ${point[1]}`)].join(' ');
 }

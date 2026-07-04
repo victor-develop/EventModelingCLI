@@ -440,35 +440,23 @@ button {
   stroke: #64706c;
 }
 
-.em-edge marker path {
-  fill: #64706c;
-}
-
-.em-edge.edge-shared-cmd .em-edge-path,
-.em-edge.edge-shared-cmd marker path {
+.em-edge-path.edge-shared-cmd {
   stroke: var(--ochre);
-  fill: var(--ochre);
 }
 
-.em-edge.edge-cmd-evt .em-edge-path,
-.em-edge.edge-cmd-evt marker path {
+.em-edge-path.edge-cmd-evt {
   stroke: var(--teal);
-  fill: var(--teal);
 }
 
-.em-edge.edge-evt-view .em-edge-path,
-.em-edge.edge-evt-view marker path {
+.em-edge-path.edge-evt-view {
   stroke: var(--rust);
-  fill: var(--rust);
 }
 
-.em-edge.edge-view-shared .em-edge-path,
-.em-edge.edge-view-shared marker path {
+.em-edge-path.edge-view-shared {
   stroke: var(--violet);
-  fill: var(--violet);
 }
 
-.em-edge.is-selected .em-edge-path {
+.em-edge-path.is-selected {
   stroke-width: 3.2px;
 }
 

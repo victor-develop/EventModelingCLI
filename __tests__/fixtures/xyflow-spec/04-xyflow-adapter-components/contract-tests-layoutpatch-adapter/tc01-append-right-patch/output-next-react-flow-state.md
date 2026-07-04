@@ -15,8 +15,7 @@ synced_at: 2026-07-03T13:43:44.711Z
     { "id": "occ-evt-order-submitted", "type": "em.evt", "parentId": "lane:event", "extent": "parent", "position": { "x": 840, "y": 40 }, "data": { "canonicalNodeId": "evt.order-submitted", "label": "evt.order-submitted", "visibleLane": "event", "lockLevel": "none" }, "selected": false }
   ],
   "edges": [
-    { "id": "edge-cmd-to-evt", "source": "occ-cmd-submit-order", "target": "occ-evt-order-submitted", "type": "em.orthogonal", "data": { "kind": "cmd-to-evt", "points": [[620, 228], [800, 428]] }, "selectable": true }
+    { "id": "edge-cmd-to-evt", "source": "occ-cmd-submit-order", "target": "occ-evt-order-submitted", "type": "em.orthogonal", "data": { "kind": "cmd-to-evt" }, "markerEnd": { "type": "arrowclosed", "color": "#2f6f73", "width": 18, "height": 18 }, "style": { "stroke": "#2f6f73", "strokeWidth": 2.2 }, "selectable": true }
   ]
 }
 ```
-

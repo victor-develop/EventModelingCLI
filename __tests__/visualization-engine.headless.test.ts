@@ -119,7 +119,8 @@ function assertReactFlowGraph(nodes: any[], edges: any[]): void {
   for (const edge of edges) {
     expect(nodeIds.has(edge.source)).toBe(true);
     expect(nodeIds.has(edge.target)).toBe(true);
-    expect(edge.data?.points?.length).toBeGreaterThan(0);
+    expect(edge.data?.kind).toBeTruthy();
+    expect(edge.markerEnd).toBeTruthy();
   }
 }
 

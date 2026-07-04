@@ -319,4 +319,40 @@ describe('LayoutEngine', () => {
       expect(browserState.displayEdges[edgeId]).toEqual(serverState.displayEdges[edgeId]);
     }
   });
+
+  test('duplicate shared anchor branches route left-to-right', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('ui.screen.order-detail', [
+      {
+        id: 'b1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'parent-a', edgeType: 'parentOf', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
+          { type: 'edge', edgeId: 'issue-a', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'cmd.confirm-receipt', nodeKind: 'cmd' },
+        ],
+      },
+      {
+        id: 'b2',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'parent-b', edgeType: 'parentOf', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
+          { type: 'edge', edgeId: 'consume-b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'view.tracking-status', nodeKind: 'viewModel' },
+        ],
+      },
+    ]));
+
+    const edges = Object.values(state.displayEdges);
+    expect(edges.length).toBeGreaterThan(0);
+    expect(edges.every((edge) => edge.points[0]![0] <= edge.points[edge.points.length - 1]![0])).toBe(true);
+
+    const secondSection = Object.values(state.occurrences)
+      .find((occ) => occ.canonicalNodeId === 'ui.section.tracking' && occ.branchClusterId === 'b2')!;
+    expect(secondSection.stageIndex).toBeGreaterThan(0);
+  });
 });

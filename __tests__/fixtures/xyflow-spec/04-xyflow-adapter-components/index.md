@@ -204,7 +204,6 @@ Node components must not:
 
 Required behavior:
 
-- Uses `data.points`.
-- Converts points into SVG path.
-- Renders arrow marker.
+- Uses React Flow `BaseEdge` with a path helper.
+- Receives arrow marker config from the edge adapter.
 - Styles by `DisplayEdgeKind`.

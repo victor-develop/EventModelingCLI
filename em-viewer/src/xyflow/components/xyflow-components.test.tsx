@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
-import { ReactFlowProvider } from '@xyflow/react';
+import { Position, ReactFlowProvider } from '@xyflow/react';
 import { SwimlaneGroupNode } from './SwimlaneGroupNode';
 import { CommandNode } from './CommandNode';
 import { OrthogonalDisplayEdge } from './OrthogonalDisplayEdge';
@@ -38,7 +38,7 @@ describe('xyflow components', () => {
     expect(screen.getByLabelText('Locked')).toBeInTheDocument();
   });
 
-  test('renders an orthogonal edge from layout points', () => {
+  test('renders an orthogonal edge with BaseEdge smooth-step path', () => {
     const { container } = render(
       <svg>
         <OrthogonalDisplayEdge
@@ -47,13 +47,24 @@ describe('xyflow components', () => {
             source: 'occ-cmd',
             target: 'occ-evt',
             selected: false,
-            data: { kind: 'cmd-to-evt', points: [[10, 20], [30, 20], [30, 60]] },
+            sourceX: 10,
+            sourceY: 20,
+            targetX: 80,
+            targetY: 60,
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            markerEnd: 'url(#edge-arrow)',
+            data: { kind: 'cmd-to-evt' },
           } as any)}
         />
       </svg> as any,
     );
 
-    expect(container.querySelector('path.em-edge-path')).toHaveAttribute('d', 'M 10 20 L 30 20 L 30 60');
+    const path = container.querySelector('path.em-edge-path');
+    expect(path).toBeInTheDocument();
+    expect(path?.getAttribute('d')).toContain('M10 20');
+    expect(path).toHaveAttribute('marker-end', 'url(#edge-arrow)');
+    expect(container.querySelector('path.react-flow__edge-interaction')).toBeInTheDocument();
   });
 
   test('renders a frontier handle node', () => {

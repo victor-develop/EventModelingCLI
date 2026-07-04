@@ -13,8 +13,17 @@ synced_at: 2026-07-03T13:43:41.925Z
     "target": "occ-cmd-submit-order",
     "type": "em.orthogonal",
     "data": {
-      "kind": "shared-to-cmd",
-      "points": [[220, 28], [400, 228]]
+      "kind": "shared-to-cmd"
+    },
+    "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#8c6f3d",
+      "width": 18,
+      "height": 18
+    },
+    "style": {
+      "stroke": "#8c6f3d",
+      "strokeWidth": 2.2
     },
     "selectable": true
   },
@@ -24,11 +33,19 @@ synced_at: 2026-07-03T13:43:41.925Z
     "target": "occ-evt-order-submitted",
     "type": "em.orthogonal",
     "data": {
-      "kind": "cmd-to-evt",
-      "points": [[620, 228], [800, 428]]
+      "kind": "cmd-to-evt"
+    },
+    "markerEnd": {
+      "type": "arrowclosed",
+      "color": "#2f6f73",
+      "width": 18,
+      "height": 18
+    },
+    "style": {
+      "stroke": "#2f6f73",
+      "strokeWidth": 2.2
     },
     "selectable": true
   }
 ]
 ```
-

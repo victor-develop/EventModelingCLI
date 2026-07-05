@@ -5,15 +5,20 @@ export type NodeKind =
   | 'cmd' | 'evt' | 'viewModel'
   | 'proc' | 'trigger';
 
-export type EdgeType =
-  | 'parentOf'
-  | 'storyOwnsCommand'
-  | 'roleUsesUIToIssueCommand'
-  | 'processorOrTriggerIssuesCommand'
-  | 'commandCausesEvent'
-  | 'eventRefreshesViewModel'
-  | 'eventUpdatesProcessor'
-  | 'uiOrProcessorConsumesViewModel';
+export const EDGE_TYPES = [
+  'parentOf',
+  'storyOwnsCommand',
+  'roleUsesUIToIssueCommand',
+  'processorOrTriggerIssuesCommand',
+  'commandCausesEvent',
+  'eventRefreshesViewModel',
+  'eventUpdatesProcessor',
+  'viewModelConsumedByUiOrProcessor',
+] as const;
+
+export type EdgeType = typeof EDGE_TYPES[number];
+
+export const EDGE_TYPE_SET: ReadonlySet<string> = new Set(EDGE_TYPES);
 
 export interface Node {
   id: string;

@@ -2,7 +2,7 @@
 
 ### Purpose
 
-Connect a processor to a ViewModel it consumes.
+Connect a ViewModel to a processor that consumes it.
 
 ### Syntax
 
@@ -16,9 +16,9 @@ em proc bind-view --proc <procId> --view <viewModelId> [--fields ...]
 {
   "edge": {
     "id": "edge_601",
-    "type": "uiOrProcessorConsumesViewModel",
-    "fromNodeId": "order.payment.proc.charge.reconcile",
-    "toNodeId": "order.payment.view.charge.detail",
+    "type": "viewModelConsumedByUiOrProcessor",
+    "fromNodeId": "order.payment.view.charge.detail",
+    "toNodeId": "order.payment.proc.charge.reconcile",
     "meta": {
       "fieldRefs": ["f.latest-status", "f.refund-status"]
     }
@@ -41,9 +41,9 @@ em proc bind-view --proc order.payment.proc.charge.reconcile --view order.paymen
   "data": {
     "edge": {
       "id": "edge_601",
-      "type": "uiOrProcessorConsumesViewModel",
-      "fromNodeId": "order.payment.proc.charge.reconcile",
-      "toNodeId": "order.payment.view.charge.detail",
+      "type": "viewModelConsumedByUiOrProcessor",
+      "fromNodeId": "order.payment.view.charge.detail",
+      "toNodeId": "order.payment.proc.charge.reconcile",
       "meta": {
         "fieldRefs": ["f.latest-status", "f.refund-status"]
       }

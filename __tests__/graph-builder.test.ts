@@ -42,6 +42,37 @@ describe('graph builder', () => {
     expect(result.branches.length).toBeGreaterThan(0);
   });
 
+  test('walk forward preserves hop-bounded cycles as repeated occurrences', () => {
+    const nodes = [
+      makeNode('ui.checkout', 'ui.screen' as Node['kind']),
+      makeNode('cmd.submit', 'cmd'),
+      makeNode('evt.submitted', 'evt'),
+      makeNode('vm.detail', 'viewModel'),
+    ];
+    const edges = [
+      makeEdge('e-ui-cmd', 'roleUsesUIToIssueCommand', 'ui.checkout', 'cmd.submit'),
+      makeEdge('e-cmd-evt', 'commandCausesEvent', 'cmd.submit', 'evt.submitted'),
+      makeEdge('e-evt-vm', 'eventRefreshesViewModel', 'evt.submitted', 'vm.detail'),
+      makeEdge('e-vm-ui', 'viewModelConsumedByUiOrProcessor', 'vm.detail', 'ui.checkout'),
+    ];
+    const g = buildGraph(nodes, edges);
+
+    const result = walkGraph(g, 'ui.checkout', 'forward', undefined, 5);
+    const nodeIds = result.branches[0]!.path
+      .filter((step) => step.nodeId)
+      .map((step) => step.nodeId);
+
+    expect(nodeIds.filter((nodeId) => nodeId === 'ui.checkout')).toHaveLength(2);
+    expect(nodeIds).toEqual([
+      'ui.checkout',
+      'cmd.submit',
+      'evt.submitted',
+      'vm.detail',
+      'ui.checkout',
+      'cmd.submit',
+    ]);
+  });
+
   test('trace finds path', () => {
     const nodes = [makeNode('a', 'cmd'), makeNode('b', 'evt'), makeNode('c', 'viewModel')];
     const edges = [

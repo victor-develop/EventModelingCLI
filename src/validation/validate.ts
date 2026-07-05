@@ -1,4 +1,4 @@
-import { Node, Edge, ViewModelSchema } from '../domain/types';
+import { EDGE_TYPE_SET, Node, Edge, ViewModelSchema } from '../domain/types';
 import { Graph, buildGraph } from '../graph/graph-builder';
 
 export interface ValidationError {
@@ -96,9 +96,36 @@ export function validate(
   }
 
   for (const edge of edges) {
-    if (edge.type === 'uiOrProcessorConsumesViewModel' && edge.meta?.fieldRefs) {
+    if (!EDGE_TYPE_SET.has(edge.type as string)) {
+      errors.push({
+        code: 'EMV-000',
+        message: `Unknown edge type "${edge.type}" in edge "${edge.id}"`,
+        details: { edgeId: edge.id, edgeType: edge.type },
+      });
+      continue;
+    }
+
+    if (edge.type === 'viewModelConsumedByUiOrProcessor') {
+      const viewModel = graph.nodes.get(edge.fromNodeId);
+      const consumer = graph.nodes.get(edge.toNodeId);
+      if (viewModel?.kind !== 'viewModel' || !consumer || (!consumer.kind.startsWith('ui.') && consumer.kind !== 'proc')) {
+        errors.push({
+          code: 'EMV-041',
+          message: `View model consumption edge "${edge.id}" must point from a viewModel to a UI or processor`,
+          details: {
+            edgeId: edge.id,
+            fromNodeId: edge.fromNodeId,
+            fromNodeKind: viewModel?.kind,
+            toNodeId: edge.toNodeId,
+            toNodeKind: consumer?.kind,
+          },
+        });
+      }
+    }
+
+    if (edge.type === 'viewModelConsumedByUiOrProcessor' && edge.meta?.fieldRefs) {
       const fieldRefs = edge.meta.fieldRefs as string[];
-      const vmSchema = vmSchemas.find(s => s.viewModelNodeId === edge.toNodeId);
+      const vmSchema = vmSchemas.find(s => s.viewModelNodeId === edge.fromNodeId);
       if (vmSchema) {
         for (const ref of fieldRefs) {
           if (!vmSchema.fields.some(f => f.fieldId === ref)) {

@@ -141,9 +141,9 @@
     {
       "id": "edge_10",
       "projectId": "proj_hotel-booking",
-      "type": "uiOrProcessorConsumesViewModel",
-      "fromNodeId": "ui.form.booking-form",
-      "toNodeId": "hotel.view.BookingSummary",
+      "type": "viewModelConsumedByUiOrProcessor",
+      "fromNodeId": "hotel.view.BookingSummary",
+      "toNodeId": "ui.form.booking-form",
       "meta": {
         "fieldRefs": [
           "booking_id",
@@ -169,9 +169,9 @@
     {
       "id": "edge_13",
       "projectId": "proj_hotel-booking",
-      "type": "uiOrProcessorConsumesViewModel",
-      "fromNodeId": "hotel.proc.BookingValidator",
-      "toNodeId": "hotel.view.RoomAvailability",
+      "type": "viewModelConsumedByUiOrProcessor",
+      "fromNodeId": "hotel.view.RoomAvailability",
+      "toNodeId": "hotel.proc.BookingValidator",
       "meta": {
         "fieldRefs": [
           "room_id"

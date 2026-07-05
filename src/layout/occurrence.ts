@@ -11,13 +11,17 @@ import {
   PathEdge,
   MergeKey,
 } from './types';
-import { getEventModelingDisplayEndpointIds } from '../domain/event-modeling-edges';
 
 export interface EdgeOccurrenceLink {
   fromOccId: string;
   toOccId: string;
   originalEdgeId: string;
   originalEdgeType: string;
+}
+
+export interface OccurrenceBuildResult {
+  occurrences: Occurrence[];
+  pathOccurrenceIds: Map<PathNode, string>;
 }
 
 function nextOccId(counter: { value: number }): string {
@@ -35,25 +39,29 @@ function inferDisplayRole(nodeKind: string): DisplayRole {
   return 'ui';
 }
 
-export function buildOccurrences(
+export function buildOccurrenceModel(
   envelope: NormalizedPathEnvelope,
   branchOffset: number,
   config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
-): Occurrence[] {
+): OccurrenceBuildResult {
   const occurrences: Occurrence[] = [];
   const seen = new Set<string>();
   const branchMembership = new Map<string, string[]>();
+  const occurrenceIdByDedupKey = new Map<string, string>();
+  const pathOccurrenceIds = new Map<PathNode, string>();
   const occurrenceIdCounter = { value: branchOffset };
 
   for (const branch of envelope.branches) {
+    const branchVisitCounts = new Map<string, number>();
+
     for (const step of branch.path) {
       if (step.type !== 'node') continue;
       const node = step as PathNode;
       const displayKind = toDisplayNodeKind(node.nodeKind);
+      const visitIndex = branchVisitCounts.get(node.nodeId) ?? 0;
+      branchVisitCounts.set(node.nodeId, visitIndex + 1);
 
-      const dedupKey = displayKind === 'shared'
-        ? `${node.nodeId}:${branch.branchId}`
-        : node.nodeId;
+      const dedupKey = occurrenceDedupKey(node.nodeId, displayKind, branch.branchId, visitIndex);
 
       if (seen.has(dedupKey)) {
         const members = branchMembership.get(dedupKey) ?? [];
@@ -61,15 +69,20 @@ export function buildOccurrences(
           members.push(branch.branchId);
           branchMembership.set(dedupKey, members);
         }
+        const occurrenceId = occurrenceIdByDedupKey.get(dedupKey);
+        if (occurrenceId) pathOccurrenceIds.set(node, occurrenceId);
         continue;
       }
       seen.add(dedupKey);
       branchMembership.set(dedupKey, [branch.branchId]);
+      const occurrenceId = node.occurrenceId ?? nextOccId(occurrenceIdCounter);
+      occurrenceIdByDedupKey.set(dedupKey, occurrenceId);
+      pathOccurrenceIds.set(node, occurrenceId);
 
       const lane = node.lane ?? toDisplayLane(displayKind);
 
       occurrences.push({
-        occurrenceId: node.occurrenceId ?? nextOccId(occurrenceIdCounter),
+        occurrenceId,
         canonicalNodeId: node.nodeId,
         nodeKind: displayKind,
         lane,
@@ -86,7 +99,15 @@ export function buildOccurrences(
     }
   }
 
-  return occurrences;
+  return { occurrences, pathOccurrenceIds };
+}
+
+export function buildOccurrences(
+  envelope: NormalizedPathEnvelope,
+  branchOffset: number,
+  config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
+): Occurrence[] {
+  return buildOccurrenceModel(envelope, branchOffset, config).occurrences;
 }
 
 export function mergeOccurrences(
@@ -165,6 +186,7 @@ export function buildMergeKey(occ: Occurrence): MergeKey {
 export function buildEdgeOccurrenceLinks(
   envelope: NormalizedPathEnvelope,
   occurrences: Occurrence[],
+  pathOccurrenceIds?: Map<PathNode, string>,
 ): EdgeOccurrenceLink[] {
   const links: EdgeOccurrenceLink[] = [];
   const nodeOccMap = new Map<string, Occurrence[]>();
@@ -189,13 +211,14 @@ export function buildEdgeOccurrenceLinks(
       const n2 = (node2 as PathNode).nodeId;
       const fromNodeId = pathEdge.displayDirection === 'backward' ? n2 : n1;
       const toNodeId = pathEdge.displayDirection === 'backward' ? n1 : n2;
-      const displayNodes = orientDisplayEdgeNodes(pathEdge.edgeType, fromNodeId, toNodeId, nodeOccMap);
 
-      const fromOccs = nodeOccMap.get(displayNodes.fromNodeId) ?? [];
-      const toOccs = nodeOccMap.get(displayNodes.toNodeId) ?? [];
+      const fromOccs = nodeOccMap.get(fromNodeId) ?? [];
+      const toOccs = nodeOccMap.get(toNodeId) ?? [];
 
-      const fromOcc = pickOccurrenceForBranch(fromOccs, branch.branchId, displayNodes.fromNodeId);
-      const toOcc = pickOccurrenceForBranch(toOccs, branch.branchId, displayNodes.toNodeId);
+      const fromPathNode = pathEdge.displayDirection === 'backward' ? node2 as PathNode : node1 as PathNode;
+      const toPathNode = pathEdge.displayDirection === 'backward' ? node1 as PathNode : node2 as PathNode;
+      const fromOcc = pickOccurrenceForPathNode(fromOccs, branch.branchId, fromNodeId, fromPathNode, pathOccurrenceIds);
+      const toOcc = pickOccurrenceForPathNode(toOccs, branch.branchId, toNodeId, toPathNode, pathOccurrenceIds);
 
       if (!fromOcc || !toOcc) continue;
 
@@ -215,6 +238,33 @@ export function buildEdgeOccurrenceLinks(
   return links;
 }
 
+function occurrenceDedupKey(
+  nodeId: string,
+  displayKind: string,
+  branchId: string,
+  visitIndex: number,
+): string {
+  if (displayKind === 'shared') return `${nodeId}:${branchId}:${visitIndex}`;
+  if (visitIndex > 0) return `${nodeId}:${branchId}:${visitIndex}`;
+  return nodeId;
+}
+
+function pickOccurrenceForPathNode(
+  occs: Occurrence[],
+  branchId: string,
+  nodeId: string,
+  pathNode: PathNode,
+  pathOccurrenceIds: Map<PathNode, string> | undefined,
+): Occurrence | undefined {
+  const pathOccurrenceId = pathOccurrenceIds?.get(pathNode);
+  if (pathOccurrenceId) {
+    const exactPathOccurrence = occs.find((occ) => occ.occurrenceId === pathOccurrenceId);
+    if (exactPathOccurrence) return exactPathOccurrence;
+  }
+
+  return pickOccurrenceForBranch(occs, branchId, nodeId);
+}
+
 function pickOccurrenceForBranch(
   occs: Occurrence[],
   branchId: string,
@@ -227,24 +277,6 @@ function pickOccurrenceForBranch(
   if (exact) return exact;
 
   return occs[0];
-}
-
-function orientDisplayEdgeNodes(
-  edgeType: string,
-  fromNodeId: string,
-  toNodeId: string,
-  nodeOccMap: Map<string, Occurrence[]>,
-): { fromNodeId: string; toNodeId: string } {
-  if (edgeType !== 'uiOrProcessorConsumesViewModel') {
-    return { fromNodeId, toNodeId };
-  }
-
-  return getEventModelingDisplayEndpointIds(
-    edgeType,
-    fromNodeId,
-    toNodeId,
-    (nodeId) => nodeOccMap.get(nodeId)?.[0]?.nodeKind,
-  );
 }
 
 function sameStageSharedMergeKey(occ: Occurrence): string {

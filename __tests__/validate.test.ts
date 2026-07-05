@@ -57,6 +57,42 @@ describe('validation rules', () => {
     expect(errors.some(e => e.code === 'EMV-030')).toBe(true);
   });
 
+  test('EMV-000: unknown persisted edge type is reported', () => {
+    const edge = {
+      ...makeEdge('e1', 'commandCausesEvent', 'c1', 'e1'),
+      type: 'legacyConsumesViewModel',
+    } as unknown as Edge;
+
+    const errors = validate([], [edge], []);
+
+    expect(errors.some(e => e.code === 'EMV-000')).toBe(true);
+  });
+
+  test('EMV-041: view consumption edge must point from viewModel to UI or processor', () => {
+    const nodes = [makeNode('v1', 'viewModel'), makeNode('ui1', 'ui.screen')];
+    const edge = makeEdge('e1', 'viewModelConsumedByUiOrProcessor', 'ui1', 'v1');
+
+    const errors = validate(nodes, [edge], []);
+
+    expect(errors.some(e => e.code === 'EMV-041')).toBe(true);
+  });
+
+  test('EMV-040: field refs are checked against the source view model schema', () => {
+    const nodes = [makeNode('v1', 'viewModel'), makeNode('ui1', 'ui.screen')];
+    const edge: Edge = {
+      ...makeEdge('e1', 'viewModelConsumedByUiOrProcessor', 'v1', 'ui1'),
+      meta: { fieldRefs: ['missing'] },
+    };
+    const schema: ViewModelSchema = {
+      viewModelNodeId: 'v1',
+      fields: [{ fieldId: 'present', name: 'present', type: 'string', nullable: false, source: { eventNodeId: 'evt1', eventFieldPath: 'payload.present' } }],
+    };
+
+    const errors = validate(nodes, [edge], [schema]);
+
+    expect(errors.some(e => e.code === 'EMV-040')).toBe(true);
+  });
+
   test('EMV-050: processor without update source', () => {
     const nodes = [makeNode('p1', 'proc')];
     const errors = validate(nodes, [], []);

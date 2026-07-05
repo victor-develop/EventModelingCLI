@@ -3,7 +3,7 @@ import cors from 'cors';
 import { Workspace } from '../workspace/workspace';
 import { buildGraph, walkGraph, findRoots, resolveLaneMap } from '../graph/graph-builder';
 import type { Node, Edge } from '../domain/types';
-import { EVENT_MODELING_EDGE_TYPES, toEventModelingDisplayEdges } from '../domain/event-modeling-edges';
+import { EVENT_MODELING_EDGE_TYPES, toEventModelingEdges } from '../domain/event-modeling-edges';
 import type { WalkBranch } from '../graph/graph-builder';
 import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
 import type { SnapshotDirection } from '../viewer-contract';
@@ -26,7 +26,7 @@ export function createServerApp(ws: Workspace): {
   const nodes = manifest ? ws.listNodes() : [];
   const edges = manifest ? ws.listEdges() : [];
   const domainGraph = buildGraph(nodes, edges);
-  const eventModelingGraph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const eventModelingGraph = buildGraph(nodes, toEventModelingEdges(edges));
 
   const laneMap = resolveLaneMap(domainGraph);
 

@@ -7,7 +7,7 @@ describe('semantic-lift', () => {
     { edgeType: 'processorOrTriggerIssuesCommand', expectedKind: 'shared-to-cmd', expectedFrom: 'shared', expectedTo: 'cmd' },
     { edgeType: 'commandCausesEvent', expectedKind: 'cmd-to-evt', expectedFrom: 'cmd', expectedTo: 'evt' },
     { edgeType: 'eventRefreshesViewModel', expectedKind: 'evt-to-viewModel', expectedFrom: 'evt', expectedTo: 'viewModel' },
-    { edgeType: 'uiOrProcessorConsumesViewModel', expectedKind: 'viewModel-to-shared', expectedFrom: 'viewModel', expectedTo: 'shared' },
+    { edgeType: 'viewModelConsumedByUiOrProcessor', expectedKind: 'viewModel-to-shared', expectedFrom: 'viewModel', expectedTo: 'shared' },
     { edgeType: 'eventUpdatesProcessor', expectedKind: 'evt-to-shared', expectedFrom: 'evt', expectedTo: 'shared' },
   ];
 

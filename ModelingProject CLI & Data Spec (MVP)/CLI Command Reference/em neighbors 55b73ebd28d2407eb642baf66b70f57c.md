@@ -21,17 +21,10 @@ em neighbors --node <nodeId|canonicalId> [--direction in|out|both] [--edge-type 
   "neighbors": [
     {
       "edgeId": "edge_450",
-      "edgeType": "uiOrProcessorConsumesViewModel",
-      "direction": "out",
+      "edgeType": "viewModelConsumedByUiOrProcessor",
+      "direction": "in",
       "nodeId": "order.payment.view.charge.detail",
       "nodeKind": "viewModel"
-    },
-    {
-      "edgeId": "edge_700",
-      "edgeType": "parentOf",
-      "direction": "in",
-      "nodeId": "ui.section.payment.detail.refund-status",
-      "nodeKind": "ui.section"
     }
   ],
   "hasMore": false
@@ -43,7 +36,7 @@ em neighbors --node <nodeId|canonicalId> [--direction in|out|both] [--edge-type 
 - `neighbors` is a **localized inspection command**.
 - It should be the default starting point when an agent only knows one component and cannot load the whole graph.
 - The command returns direct neighbors only. It does not recurse.
-- `parentOf` may be included here for navigation, even though it does not affect story reachability.
+- `parentOf` and `storyOwnsCommand` are structural edges and are excluded from event-model graph commands.
 
 ### LLM usage guidance
 
@@ -72,17 +65,10 @@ em neighbors --node ui.component.payment.detail.refund-status --direction both -
     "neighbors": [
       {
         "edgeId": "edge_450",
-        "edgeType": "uiOrProcessorConsumesViewModel",
-        "direction": "out",
+        "edgeType": "viewModelConsumedByUiOrProcessor",
+        "direction": "in",
         "nodeId": "order.payment.view.charge.detail",
         "nodeKind": "viewModel"
-      },
-      {
-        "edgeId": "edge_700",
-        "edgeType": "parentOf",
-        "direction": "in",
-        "nodeId": "ui.section.payment.detail.refund-status",
-        "nodeKind": "ui.section"
       }
     ],
     "hasMore": false

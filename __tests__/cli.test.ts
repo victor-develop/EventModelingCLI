@@ -216,7 +216,9 @@ describe('Event Modeling CLI', () => {
       em('view', 'new', 'order.view.order.detail');
       const r = em('ui', 'bind-view', '--ui', 'ui.component.detail-list', '--view', 'order.view.order.detail', '--fields', 'f.id,f.name');
       expect(r.ok).toBe(true);
-      expect((r.data.edge as any).type).toBe('uiOrProcessorConsumesViewModel');
+      expect((r.data.edge as any).type).toBe('viewModelConsumedByUiOrProcessor');
+      expect((r.data.edge as any).fromNodeId).toBe('order.view.order.detail');
+      expect((r.data.edge as any).toNodeId).toBe('ui.component.detail-list');
     });
 
     test('ui expose-cmd', () => {
@@ -239,6 +241,9 @@ describe('Event Modeling CLI', () => {
       em('view', 'new', 'order.view.payment.status');
       const r = em('proc', 'bind-view', '--proc', 'order.proc.payment.process', '--view', 'order.view.payment.status', '--fields', 'f.status');
       expect(r.ok).toBe(true);
+      expect((r.data.edge as any).type).toBe('viewModelConsumedByUiOrProcessor');
+      expect((r.data.edge as any).fromNodeId).toBe('order.view.payment.status');
+      expect((r.data.edge as any).toNodeId).toBe('order.proc.payment.process');
     });
 
     test('trigger issues-cmd', () => {
@@ -310,6 +315,33 @@ describe('Event Modeling CLI', () => {
       expect(Array.isArray(r.data.neighbors)).toBe(true);
     });
 
+    test('neighbors reports view model consumption with canonical direction', () => {
+      em('ui', 'add', 'component', '--name', 'Order Detail Panel');
+      em('ui', 'bind-view', '--ui', 'ui.component.order-detail-panel', '--view', 'order.view.order.detail');
+
+      const viewNeighbors = em('neighbors', '--node', 'order.view.order.detail', '--direction', 'out');
+      expect(viewNeighbors.ok).toBe(true);
+      expect(viewNeighbors.data.neighbors).toEqual([
+        expect.objectContaining({
+          edgeType: 'viewModelConsumedByUiOrProcessor',
+          direction: 'out',
+          nodeId: 'ui.component.order-detail-panel',
+          nodeKind: 'ui.component',
+        }),
+      ]);
+
+      const uiNeighbors = em('neighbors', '--node', 'ui.component.order-detail-panel', '--direction', 'both');
+      expect(uiNeighbors.ok).toBe(true);
+      expect(uiNeighbors.data.neighbors).toEqual([
+        expect.objectContaining({
+          edgeType: 'viewModelConsumedByUiOrProcessor',
+          direction: 'in',
+          nodeId: 'order.view.order.detail',
+          nodeKind: 'viewModel',
+        }),
+      ]);
+    });
+
     test('walk forward', () => {
       const r = em('walk', '--from', 'order.cmd.create-order', '--direction', 'forward', '--max-hops', '3');
       expect(r.ok).toBe(true);
@@ -376,18 +408,30 @@ describe('Event Modeling CLI', () => {
 
     test('review impact evt', () => {
       em('evt', 'new', 'order.evt.test.happened');
+      em('view', 'new', 'order.view.test.detail');
+      em('ui', 'add', 'screen', '--name', 'Test Detail');
+      em('link', 'evt->view', 'order.evt.test.happened', 'order.view.test.detail');
+      em('ui', 'bind-view', '--ui', 'ui.screen.test-detail', '--view', 'order.view.test.detail');
       const r = em('review', 'impact', 'evt', 'order.evt.test.happened');
       expect(r.ok).toBe(true);
       expect((r.data as any).eventId).toBe('order.evt.test.happened');
+      expect((r.data as any).affectedViewModels).toContain('order.view.test.detail');
+      expect((r.data as any).affectedUiNodes).toContain('ui.screen.test-detail');
     });
 
     test('review impact field', () => {
       em('view', 'new', 'order.view.test.detail');
       em('evt', 'new', 'order.evt.test.happened');
+      em('ui', 'add', 'screen', '--name', 'Test Detail');
+      em('proc', 'new', 'order.proc.test-consumer');
       em('link', 'evt->view', 'order.evt.test.happened', 'order.view.test.detail');
       em('view', 'field', 'add', 'order.view.test.detail', '--field-id', 'f.id', '--name', 'id', '--type', 'string', '--from-event', 'order.evt.test.happened', '--path', 'payload.id');
+      em('ui', 'bind-view', '--ui', 'ui.screen.test-detail', '--view', 'order.view.test.detail', '--fields', 'f.id');
+      em('proc', 'bind-view', '--proc', 'order.proc.test-consumer', '--view', 'order.view.test.detail', '--fields', 'f.id');
       const r = em('review', 'impact', 'field', 'order.view.test.detail', 'f.id');
       expect(r.ok).toBe(true);
+      expect((r.data as any).consumers.ui).toContain('ui.screen.test-detail');
+      expect((r.data as any).consumers.proc).toContain('order.proc.test-consumer');
     });
   });
 

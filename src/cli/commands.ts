@@ -1,6 +1,6 @@
 import { Workspace } from '../workspace/workspace';
 import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeType } from '../domain/types';
-import { toEventModelingDisplayEdges } from '../domain/event-modeling-edges';
+import { toEventModelingEdges } from '../domain/event-modeling-edges';
 import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId, findRoots } from '../graph/graph-builder';
 import { lintCanonicalId } from '../validation/lint';
 import { validate } from '../validation/validate';
@@ -521,9 +521,9 @@ export function uiBindView(ws: Workspace, uiId: string, viewModelId: string, fie
   const edge = {
     id: edgeId,
     projectId: manifest.id,
-    type: 'uiOrProcessorConsumesViewModel' as const,
-    fromNodeId: ui.canonicalId,
-    toNodeId: view.canonicalId,
+    type: 'viewModelConsumedByUiOrProcessor' as const,
+    fromNodeId: view.canonicalId,
+    toNodeId: ui.canonicalId,
     meta: Object.keys(meta).length > 0 ? meta : undefined,
   };
   ws.saveEdge(edge);
@@ -581,9 +581,9 @@ export function procBindView(ws: Workspace, procId: string, viewModelId: string,
   const edge = {
     id: edgeId,
     projectId: manifest.id,
-    type: 'uiOrProcessorConsumesViewModel' as const,
-    fromNodeId: proc.canonicalId,
-    toNodeId: view.canonicalId,
+    type: 'viewModelConsumedByUiOrProcessor' as const,
+    fromNodeId: view.canonicalId,
+    toNodeId: proc.canonicalId,
     meta: Object.keys(meta).length > 0 ? meta : undefined,
   };
   ws.saveEdge(edge);
@@ -739,7 +739,7 @@ export function neighbors(ws: Workspace, nodeId: string, direction: string = 'bo
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const graph = buildGraph(nodes, toEventModelingEdges(edges));
   const results = getNeighbors(graph, nodeId, direction as 'in' | 'out' | 'both', edgeTypes as any[], limit);
   return okResult('em neighbors', {
     center: nodeId,
@@ -754,7 +754,7 @@ export function walk(ws: Workspace, fromId: string, direction: string = 'forward
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const graph = buildGraph(nodes, toEventModelingEdges(edges));
   const result = walkGraph(graph, fromId, direction as any, edgeTypes as any[], maxHops, limit);
   const data: Record<string, unknown> = {
     from: fromId,
@@ -779,7 +779,7 @@ export function trace(ws: Workspace, fromId: string, toId: string, maxHops?: num
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const graph = buildGraph(nodes, toEventModelingEdges(edges));
   const paths = tracePath(graph, fromId, toId, maxHops);
   return okResult('em trace', { paths }, { projectId: ws.getManifest()!.id });
 }
@@ -789,7 +789,7 @@ export function graph(ws: Workspace, focusId?: string, depth?: number, format: s
   if ('ok' in check && !check.ok) return check;
   const nodes = ws.listNodes();
   const edges = ws.listEdges();
-  const g = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const g = buildGraph(nodes, toEventModelingEdges(edges));
   const mermaidStr = toMermaid(g, focusId, depth);
   return okResult('em graph', { format, graph: mermaidStr }, { projectId: ws.getManifest()!.id });
 }
@@ -868,8 +868,8 @@ export function reviewImpactEvt(ws: Workspace, evtId: string): CLIResult {
       if (vmResolved) {
         const consumers = graph.outgoing.get(vmResolved) ?? [];
         for (const c of consumers) {
-          if (c.type === 'uiOrProcessorConsumesViewModel') {
-            const consumer = graph.nodes.get(c.fromNodeId);
+          if (c.type === 'viewModelConsumedByUiOrProcessor') {
+            const consumer = graph.nodes.get(c.toNodeId);
             if (consumer && consumer.kind.startsWith('ui.')) {
               if (!affectedUiNodes.includes(consumer.canonicalId)) {
                 affectedUiNodes.push(consumer.canonicalId);
@@ -900,12 +900,12 @@ export function reviewImpactField(ws: Workspace, viewModelId: string, fieldId: s
   const uiConsumers: string[] = [];
   const procConsumers: string[] = [];
   if (resolved) {
-    const inEdges = graph.incoming.get(resolved) ?? [];
-    for (const e of inEdges) {
-      if (e.type === 'uiOrProcessorConsumesViewModel') {
+    const outEdges = graph.outgoing.get(resolved) ?? [];
+    for (const e of outEdges) {
+      if (e.type === 'viewModelConsumedByUiOrProcessor') {
         const fieldRefs = e.meta?.fieldRefs as string[] | undefined;
         if (!fieldRefs || fieldRefs.includes(fieldId)) {
-          const consumer = graph.nodes.get(e.fromNodeId);
+          const consumer = graph.nodes.get(e.toNodeId);
           if (consumer) {
             if (consumer.kind.startsWith('ui.')) uiConsumers.push(consumer.canonicalId);
             else if (consumer.kind === 'proc') procConsumers.push(consumer.canonicalId);
@@ -967,10 +967,10 @@ export function storySuggestBind(ws: Workspace, storyId: string, cmdIds: string[
       for (const vmId of vmNodes) {
         const vmResolved = resolveNodeId(graph, vmId);
         if (vmResolved) {
-          const vmIn = graph.incoming.get(vmResolved) ?? [];
-          for (const ce of vmIn) {
-            if (ce.type === 'uiOrProcessorConsumesViewModel') {
-              const consumer = graph.nodes.get(ce.fromNodeId);
+          const vmOut = graph.outgoing.get(vmResolved) ?? [];
+          for (const ce of vmOut) {
+            if (ce.type === 'viewModelConsumedByUiOrProcessor') {
+              const consumer = graph.nodes.get(ce.toNodeId);
               if (consumer && consumer.kind.startsWith('ui.')) interfaceNodes.add(consumer.canonicalId);
               if (consumer && consumer.kind === 'proc') boundaryNodes.add(consumer.canonicalId);
             }

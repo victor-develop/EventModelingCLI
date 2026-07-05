@@ -163,7 +163,6 @@ export function walkGraph(
 
   const walk = (startId: string, dir: 'forward' | 'backward'): WalkBranch[] => {
     const branches: WalkBranch[] = [];
-    const visited = new Set<string>();
     const startNode = graph.nodes.get(startId);
     if (!startNode) return branches;
 
@@ -190,6 +189,7 @@ export function walkGraph(
         continue;
       }
 
+      let expanded = false;
       for (const edge of filtered) {
         const nextIdCandidate = dir === 'forward' ? edge.toNodeId : edge.fromNodeId;
         let nextNode = graph.nodes.get(nextIdCandidate);
@@ -204,16 +204,15 @@ export function walkGraph(
         }
 
         if (!nextNode) continue;
-        const key = `${actualNextId}:${edge.id}`;
-        if (visited.has(key)) continue;
-        visited.add(key);
         const newPath = [
           ...path,
           { edgeId: edge.id, edgeType: edge.type, direction: dir },
           { nodeId: nextNode.canonicalId, nodeKind: nextNode.kind },
         ];
         stack.push({ currentId: actualNextId, path: newPath, depth: depth + 1 });
+        expanded = true;
       }
+      if (!expanded && (path.length > 1 || depth > 0)) branches.push({ path });
     }
     return branches;
   };

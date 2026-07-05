@@ -5,6 +5,7 @@ import { Position, ReactFlowProvider, type Node, type NodeProps } from '@xyflow/
 import type { ReactFlowNodeData, SwimlaneNodeData, FrontierHandleData } from '../adapter/types';
 import { SwimlaneGroupNode } from './SwimlaneGroupNode';
 import { CommandNode } from './CommandNode';
+import { ViewModelNode } from './ViewModelNode';
 import { OrthogonalDisplayEdge } from './OrthogonalDisplayEdge';
 import { FrontierHandleNode } from './FrontierHandleNode';
 
@@ -38,6 +39,28 @@ describe('xyflow components', () => {
     expect(screen.getByText('Submit Order')).toBeInTheDocument();
     expect(screen.getByText('cmd.submit-order')).toBeInTheDocument();
     expect(screen.getByLabelText('Locked')).toBeInTheDocument();
+  });
+
+  test('renders view model badge with full label', () => {
+    render(
+      <ReactFlowProvider>
+        <ViewModelNode
+          {...({
+            id: 'occ-vm-order-detail',
+            type: 'em.viewModel',
+            selected: false,
+            data: {
+              canonicalNodeId: 'vm.order-detail',
+              label: 'Order Detail',
+              visibleLane: 'commandViewModel',
+              lockLevel: 'none',
+            },
+          } as unknown as NodeProps<Node<ReactFlowNodeData>>)}
+        />
+      </ReactFlowProvider>,
+    );
+
+    expect(screen.getByText('view model')).toBeInTheDocument();
   });
 
   test('renders an orthogonal edge with BaseEdge smooth-step path', () => {

@@ -5,6 +5,7 @@ import type { WalkBranch } from '@em/graph/graph-builder';
 import type { Node, Edge } from '@em/domain/types';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
 import { walkBranchesToEnvelope } from '@em/viewer-contract/envelope';
+import { normalizeLayoutPatchForViewer } from '@em/viewer-contract/normalize';
 
 interface UseWalkStateResult {
   patch: LayoutPatch | null;
@@ -98,7 +99,7 @@ export function useWalkState(initData: VisualizationSnapshot | null): UseWalkSta
       const nextPatch = direction === 'forward'
         ? engineRef.current.appendExploreResult(layoutState, frontier.occurrenceId, envelope)
         : engineRef.current.prependExploreResult(layoutState, frontier.occurrenceId, envelope);
-      setPatch(deepClone(nextPatch));
+      setPatch(deepClone(normalizeLayoutPatchForViewer(nextPatch, layoutState)));
       setWalkCount(c => c + 1);
     } finally {
       isWalkingRef.current = false;

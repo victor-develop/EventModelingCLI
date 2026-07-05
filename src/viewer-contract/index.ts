@@ -16,6 +16,7 @@ export {
 } from './lanePolicy';
 export {
   computeVisibleSwimlaneRects,
+  normalizeLayoutPatchForViewer,
   normalizeOccurrencesForViewer,
   normalizeRenderedEdgesForViewer,
 } from './normalize';

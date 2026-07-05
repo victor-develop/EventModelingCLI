@@ -1,5 +1,5 @@
 import { buildGraph, resolveNodeId } from '../graph/graph-builder';
-import { toEventModelingDisplayEdges } from '../domain/event-modeling-edges';
+import { toEventModelingEdges } from '../domain/event-modeling-edges';
 import type { LayoutState } from '../layout/types';
 import { LayoutEngine } from '../layout/layout-engine';
 import type { Workspace } from '../workspace/workspace';
@@ -35,7 +35,7 @@ export function buildVisualizationSnapshot(args: {
   const nodes = args.workspace.listNodes();
   const edges = args.workspace.listEdges();
   const domainGraph = buildGraph(nodes, edges);
-  const graph = buildGraph(nodes, toEventModelingDisplayEdges(nodes, edges));
+  const graph = buildGraph(nodes, toEventModelingEdges(edges));
   const resolvedFocus = resolveNodeId(domainGraph, args.focus);
   if (!resolvedFocus) {
     throw new VisualizationSnapshotError(

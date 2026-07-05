@@ -26,10 +26,10 @@ function App() {
 
   const activeRootId = useMemo(() => data?.focusNodeId ?? null, [data]);
   const activeRootName = useMemo(() => {
-    if (!rootsData || !activeRootId) return null;
-    const root = rootsData.roots.find(r => r.canonicalId === activeRootId);
-    return root?.displayName ?? null;
-  }, [rootsData, activeRootId]);
+    if (!activeRootId) return null;
+    const root = rootsData?.roots.find(r => r.canonicalId === activeRootId);
+    return root?.displayName ?? data?.domainNodes[activeRootId]?.displayName ?? activeRootId;
+  }, [data?.domainNodes, rootsData, activeRootId]);
 
   const projectName = useMemo(() => {
     return data?.projectName ?? rootsData?.projectName ?? 'Event Modeling';

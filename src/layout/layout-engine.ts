@@ -11,7 +11,7 @@ import {
 } from './types';
 import { semanticLift, resetDeCounter } from './semantic-lift';
 import {
-  buildOccurrences,
+  buildOccurrenceModel,
   mergeOccurrences,
   buildEdgeOccurrenceLinks,
   mergeSameStageSharedOccurrences,
@@ -247,15 +247,26 @@ function assignExploreStages(
   return result;
 }
 
-function originalEdgeIdsFromState(displayEdges: Record<string, RenderedEdge>): Set<string> {
+function renderedEdgeKeysFromState(displayEdges: Record<string, RenderedEdge>): Set<string> {
   const result = new Set<string>();
   for (const edge of Object.values(displayEdges)) {
-    const originalEdgeId = edge.meta?.originalEdgeId;
-    if (typeof originalEdgeId === 'string') {
-      result.add(originalEdgeId);
-    }
+    result.add(renderedEdgeKey({
+      fromOccId: edge.fromOccurrenceId,
+      toOccId: edge.toOccurrenceId,
+      originalEdgeId: typeof edge.meta?.originalEdgeId === 'string' ? edge.meta.originalEdgeId : edge.displayEdgeId,
+      originalEdgeType: typeof edge.meta?.originalEdgeType === 'string' ? edge.meta.originalEdgeType : edge.kind,
+    }));
   }
   return result;
+}
+
+function renderedEdgeKey(link: EdgeOccurrenceLink): string {
+  return [
+    link.fromOccId,
+    link.toOccId,
+    link.originalEdgeId,
+    link.originalEdgeType,
+  ].join('\u0000');
 }
 
 export class LayoutEngine {
@@ -268,12 +279,13 @@ export class LayoutEngine {
   initLayout(envelope: NormalizedPathEnvelope): LayoutState {
     resetDeCounter();
 
-    let occurrences = buildOccurrences(envelope, 0, this.config);
+    const occurrenceModel = buildOccurrenceModel(envelope, 0, this.config);
+    let occurrences = occurrenceModel.occurrences;
 
     const laneOrder = computeLaneOrder(occurrences);
     const dynamicConfig = { ...this.config, laneBaseY: computeDynamicLaneBaseY(laneOrder) };
 
-    let edgeOccLinks = buildEdgeOccurrenceLinks(envelope, occurrences);
+    let edgeOccLinks = buildEdgeOccurrenceLinks(envelope, occurrences, occurrenceModel.pathOccurrenceIds);
 
     const anchorOcc = occurrences.find(o => o.canonicalNodeId === envelope.anchor.nodeId);
     const anchorOccId = anchorOcc?.occurrenceId ?? occurrences[0]?.occurrenceId ?? '';
@@ -364,7 +376,8 @@ export class LayoutEngine {
   ): LayoutPatch {
     const occurrenceOffset = maxOrdinalFromIds(Object.keys(state.occurrences), 'occ');
     const sourceOccurrence = state.occurrences[sourceOccurrenceId];
-    const incomingOccurrences = buildOccurrences(envelope, occurrenceOffset, this.config);
+    const incomingOccurrenceModel = buildOccurrenceModel(envelope, occurrenceOffset, this.config);
+    const incomingOccurrences = incomingOccurrenceModel.occurrences;
     const existingOccs = Object.values(state.occurrences);
     const newOccurrences = sourceOccurrence
       ? incomingOccurrences.filter((occurrence) => !(
@@ -377,7 +390,7 @@ export class LayoutEngine {
     const laneOrder = computeLaneOrder(merged);
     const dynamicConfig = { ...this.config, laneBaseY: computeDynamicLaneBaseY(laneOrder) };
 
-    let allEdgeLinks = buildEdgeOccurrenceLinks(envelope, merged);
+    let allEdgeLinks = buildEdgeOccurrenceLinks(envelope, merged, incomingOccurrenceModel.pathOccurrenceIds);
 
     const anchorOcc = merged.find(o => o.occurrenceId === sourceOccurrenceId);
     const anchorId = anchorOcc?.occurrenceId ?? sourceOccurrenceId;
@@ -395,12 +408,12 @@ export class LayoutEngine {
     const compactedOccurrences = compacted.occurrences;
     const addedAfterCompaction = added.filter(a => !compacted.removedOccurrenceIds.includes(a.occurrenceId));
     const stagedAdded = compactedOccurrences.filter(o => addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId));
-    const existingOriginalEdgeIds = originalEdgeIdsFromState(state.displayEdges);
+    const existingRenderedEdgeKeys = renderedEdgeKeysFromState(state.displayEdges);
 
     const newRenderedEdges: RenderedEdge[] = [];
     let edgeOrdinal = maxOrdinalFromIds(Object.keys(state.displayEdges), 'de');
     for (const link of allEdgeLinks) {
-      const isNew = !existingOriginalEdgeIds.has(link.originalEdgeId);
+      const isNew = !existingRenderedEdgeKeys.has(renderedEdgeKey(link));
       if (!isNew) continue;
       edgeOrdinal += 1;
       const de = semanticLift(link.originalEdgeType as any, link.originalEdgeId, `de_${edgeOrdinal}`);

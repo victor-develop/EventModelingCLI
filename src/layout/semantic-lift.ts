@@ -8,7 +8,7 @@ const EDGE_LIFT_MAP: Partial<Record<EdgeType, { kind: DisplayEdgeKind; from: Dis
   processorOrTriggerIssuesCommand: { kind: 'shared-to-cmd', from: 'shared', to: 'cmd' },
   commandCausesEvent: { kind: 'cmd-to-evt', from: 'cmd', to: 'evt' },
   eventRefreshesViewModel: { kind: 'evt-to-viewModel', from: 'evt', to: 'viewModel' },
-  uiOrProcessorConsumesViewModel: { kind: 'viewModel-to-shared', from: 'viewModel', to: 'shared' },
+  viewModelConsumedByUiOrProcessor: { kind: 'viewModel-to-shared', from: 'viewModel', to: 'shared' },
   eventUpdatesProcessor: { kind: 'evt-to-shared', from: 'evt', to: 'shared' },
 };
 

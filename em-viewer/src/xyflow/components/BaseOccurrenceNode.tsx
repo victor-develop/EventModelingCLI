@@ -8,7 +8,7 @@ type EmNodeProps = NodeProps<Node<ReactFlowNodeData>>;
 const KIND_LABEL: Record<string, string> = {
   'em.cmd': 'cmd',
   'em.evt': 'event',
-  'em.viewModel': 'view',
+  'em.viewModel': 'view model',
   'em.ui': 'ui',
   'em.trigger': 'trigger',
   'em.proc': 'proc',

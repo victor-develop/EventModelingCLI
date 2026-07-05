@@ -167,7 +167,7 @@ describe('canonical dedup', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'hotel.view.BookingSummary', nodeKind: 'viewModel' },
-          { type: 'edge', edgeId: 'e_view_screen_a', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e_view_screen_a', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.screen.order-detail-screen', nodeKind: 'ui.screen' },
         ],
       },
@@ -176,7 +176,7 @@ describe('canonical dedup', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'hotel.view.BookingSummary', nodeKind: 'viewModel' },
-          { type: 'edge', edgeId: 'e_view_screen_b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e_view_screen_b', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.screen.order-detail-screen', nodeKind: 'ui.screen' },
         ],
       },

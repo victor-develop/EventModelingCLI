@@ -73,12 +73,12 @@ describe('buildVisualizationSnapshot', () => {
     }
   });
 
-  test('projects view consumption into event-modeling display direction', () => {
+  test('keeps view consumption in canonical event-modeling direction', () => {
     const { workspace, cleanup } = createOrderWorkspace();
     try {
       const projectId = workspace.getManifest()!.id;
       workspace.saveNode(node(projectId, 'vm.checkout-summary', 'viewModel', 'Checkout Summary'));
-      workspace.saveEdge(edge(projectId, 'edge-ui-consumes-summary', 'uiOrProcessorConsumesViewModel', 'ui.checkout', 'vm.checkout-summary'));
+      workspace.saveEdge(edge(projectId, 'edge-ui-consumes-summary', 'viewModelConsumedByUiOrProcessor', 'vm.checkout-summary', 'ui.checkout'));
 
       const uiForward = buildVisualizationSnapshot({
         workspace,
@@ -101,6 +101,46 @@ describe('buildVisualizationSnapshot', () => {
       expect(renderedEdge.kind).toBe('viewModel-to-shared');
       expect(occurrences.get(renderedEdge.fromOccurrenceId)?.canonicalNodeId).toBe('vm.checkout-summary');
       expect(occurrences.get(renderedEdge.toOccurrenceId)?.canonicalNodeId).toBe('ui.checkout');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('renders repeated view model consumption when a later event refreshes the same view model', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'cmd.ship-order', 'cmd', 'Ship Order'));
+      workspace.saveNode(node(projectId, 'evt.order-shipped', 'evt', 'Order Shipped'));
+      workspace.saveEdge(edge(projectId, 'edge-pay-to-ship', 'roleUsesUIToIssueCommand', 'ui.pay-order-action', 'cmd.ship-order'));
+      workspace.saveEdge(edge(projectId, 'edge-ship-to-shipped', 'commandCausesEvent', 'cmd.ship-order', 'evt.order-shipped'));
+      workspace.saveEdge(edge(projectId, 'edge-shipped-to-detail', 'eventRefreshesViewModel', 'evt.order-shipped', 'vm.order-detail'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'ui.checkout',
+        direction: 'forward',
+        hops: 8,
+      });
+      const detailOccurrences = snapshot.occurrences
+        .filter((occ) => occ.canonicalNodeId === 'vm.order-detail')
+        .sort((a, b) => a.stageIndex - b.stageIndex);
+      const payActionOccurrences = snapshot.occurrences
+        .filter((occ) => occ.canonicalNodeId === 'ui.pay-order-action')
+        .sort((a, b) => a.stageIndex - b.stageIndex);
+      const edgesByOriginalId = new Map(snapshot.renderedEdges.map((item) => [item.meta?.originalEdgeId, item]));
+
+      expect(detailOccurrences.map((occ) => occ.stageIndex)).toEqual([3, 7]);
+      expect(payActionOccurrences.map((occ) => occ.stageIndex)).toEqual([4, 8]);
+
+      const shippedToDetail = edgesByOriginalId.get('edge-shipped-to-detail')!;
+      const repeatedViewToUi = snapshot.renderedEdges
+        .filter((item) => item.meta?.originalEdgeId === 'edge-vm-to-pay')
+        .find((item) => item.fromOccurrenceId === detailOccurrences[1]!.occurrenceId);
+
+      expect(shippedToDetail.toOccurrenceId).toBe(detailOccurrences[1]!.occurrenceId);
+      expect(repeatedViewToUi?.toOccurrenceId).toBe(payActionOccurrences[1]!.occurrenceId);
+      expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
     } finally {
       cleanup();
     }

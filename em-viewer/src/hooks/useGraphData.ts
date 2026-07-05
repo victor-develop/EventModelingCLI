@@ -33,7 +33,7 @@ export function useGraphData() {
         return r.json() as Promise<RootsResponse>;
       })
       .then(async (rootsResp) => {
-        const firstFocus = rootsResp.roots[0]?.canonicalId;
+        const firstFocus = getFocusFromLocation() ?? rootsResp.roots[0]?.canonicalId;
         const layoutResp = await fetchLayout(firstFocus);
         setData(layoutResp);
         setRootsData(rootsResp);
@@ -47,6 +47,7 @@ export function useGraphData() {
 
   const refocus = useCallback((newFocusId: string) => {
     setSwitching(true);
+    setFocusLocation(newFocusId);
     fetchLayout(newFocusId)
       .then(initResp => {
         setData(initResp);
@@ -59,6 +60,17 @@ export function useGraphData() {
   }, []);
 
   return { data, rootsData, loading, switching, error, refocus };
+}
+
+function getFocusFromLocation(): string | undefined {
+  const focus = new URLSearchParams(window.location.search).get('focus')?.trim();
+  return focus || undefined;
+}
+
+function setFocusLocation(focus: string): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set('focus', focus);
+  window.history.replaceState(null, '', url);
 }
 
 function fetchLayout(focus?: string): Promise<VisualizationSnapshot> {

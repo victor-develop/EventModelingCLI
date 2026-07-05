@@ -328,7 +328,7 @@ describe('LayoutEngine', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'view.order-detail', nodeKind: 'viewModel' },
-          { type: 'edge', edgeId: 'consume-a', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'consume-a', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
         ],
       },
@@ -343,7 +343,7 @@ describe('LayoutEngine', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'view.order-detail', nodeKind: 'viewModel' },
-          { type: 'edge', edgeId: 'consume-b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'consume-b', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.screen.order-detail', nodeKind: 'ui.screen' },
         ],
       },
@@ -404,7 +404,7 @@ describe('LayoutEngine', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'view.tracking-status', nodeKind: 'viewModel' },
-          { type: 'edge', edgeId: 'consume-a', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'consume-a', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
         ],
       },
@@ -413,7 +413,7 @@ describe('LayoutEngine', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'view.tracking-status', nodeKind: 'viewModel' },
-          { type: 'edge', edgeId: 'consume-b', edgeType: 'uiOrProcessorConsumesViewModel', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'consume-b', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.section.tracking', nodeKind: 'ui.section' },
         ],
       },
@@ -427,5 +427,53 @@ describe('LayoutEngine', () => {
       .filter((occ) => occ.canonicalNodeId === 'ui.section.tracking');
     expect(sections).toHaveLength(1);
     expect(sections[0].stageIndex).toBe(4);
+  });
+
+  test('appendExploreResult emits repeated original edges when occurrence endpoints differ', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('ui.checkout', [
+      {
+        id: 'checkout_to_shipped',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.checkout', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'e-ui-submit', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'cmd.submit', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e-submit-event', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'evt.submitted', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e-submitted-detail', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'vm.detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'e-detail-screen', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.detail', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'e-ui-ship', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'cmd.ship', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e-ship-event', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'evt.shipped', nodeKind: 'evt' },
+        ],
+      },
+    ]));
+    const shippedOcc = Object.values(state.occurrences).find((occ) => occ.canonicalNodeId === 'evt.shipped')!;
+
+    const patch = engine.appendExploreResult(state, shippedOcc.occurrenceId, makeEnvelope('evt.shipped', [
+      {
+        id: 'shipped_back_to_detail',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'evt.shipped', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e-shipped-detail', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'vm.detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'e-detail-screen', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'ui.detail', nodeKind: 'ui.screen' },
+        ],
+      },
+    ]));
+
+    const addedDetail = patch.addedOccurrences.find((occ) => occ.canonicalNodeId === 'vm.detail')!;
+    const addedScreen = patch.addedOccurrences.find((occ) => occ.canonicalNodeId === 'ui.detail')!;
+    const repeatedConsumptionEdge = patch.addedEdges.find((edge) => edge.meta?.originalEdgeId === 'e-detail-screen');
+
+    expect(addedDetail.stageIndex).toBeGreaterThan(shippedOcc.stageIndex);
+    expect(repeatedConsumptionEdge?.fromOccurrenceId).toBe(addedDetail.occurrenceId);
+    expect(repeatedConsumptionEdge?.toOccurrenceId).toBe(addedScreen.occurrenceId);
   });
 });

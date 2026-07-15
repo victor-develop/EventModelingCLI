@@ -61,6 +61,70 @@ describe('viewer normalization', () => {
     expect(rects.find((rect) => rect.lane === 'shared')?.x).toBe(-40);
   });
 
+  test('visible swimlane rects are repacked when a taller lane would overlap the next lane', () => {
+    const rects = computeVisibleSwimlaneRects([
+      occurrence({
+        occurrenceId: 'occ-public-api',
+        canonicalNodeId: 'returns.proc.public-api',
+        nodeKind: 'shared',
+        lane: 'role:role.buyer',
+        displayRole: 'processor',
+        x: 0,
+        y: 0,
+      }),
+      occurrence({
+        occurrenceId: 'occ-request-return',
+        canonicalNodeId: 'returns.cmd.request-return',
+        nodeKind: 'cmd',
+        lane: 'commandViewModel',
+        displayRole: 'command',
+        x: 400,
+        y: 200,
+      }),
+      occurrence({
+        occurrenceId: 'occ-return-detail',
+        canonicalNodeId: 'returns.view.return.detail',
+        nodeKind: 'viewModel',
+        lane: 'commandViewModel',
+        displayRole: 'projection',
+        x: 1200,
+        y: 200,
+      }),
+      occurrence({
+        occurrenceId: 'occ-return-list',
+        canonicalNodeId: 'returns.view.return.list',
+        nodeKind: 'viewModel',
+        lane: 'commandViewModel',
+        displayRole: 'projection',
+        x: 1200,
+        y: 280,
+      }),
+      occurrence({
+        occurrenceId: 'occ-return-status',
+        canonicalNodeId: 'returns.view.return.status',
+        nodeKind: 'viewModel',
+        lane: 'commandViewModel',
+        displayRole: 'projection',
+        x: 1200,
+        y: 360,
+      }),
+      occurrence({
+        occurrenceId: 'occ-return-requested',
+        canonicalNodeId: 'returns.evt.return.requested',
+        nodeKind: 'evt',
+        lane: 'event',
+        displayRole: 'event',
+        x: 800,
+        y: 486,
+      }),
+    ]);
+
+    const commandRect = rects.find((rect) => rect.lane === 'commandViewModel')!;
+    const eventRect = rects.find((rect) => rect.lane === 'event')!;
+
+    expect(commandRect.y + commandRect.height).toBeLessThan(eventRect.y);
+  });
+
   test('normalizes layout patches with the same visible swimlane envelope as snapshots', () => {
     const ui = occurrence({
       occurrenceId: 'occ-ui',

@@ -2,7 +2,12 @@ import type { Node } from '@xyflow/react';
 import type { Node as DomainNode } from '@em/domain/types';
 import type { Occurrence, SwimlaneRect } from '@em/layout/types';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
-import { getVisibleLaneLabel, toVisibleLane, VISIBLE_LANE_ORDER } from './lanePolicy';
+import {
+  createLaneDescriptors,
+  getSnapshotLaneDescriptors,
+  getVisibleLaneLabel,
+  toVisibleLane,
+} from './lanePolicy';
 import type { FrontierHandleData, ReactFlowNodeData, SwimlaneNodeData } from './types';
 
 type InteractionMode = 'full' | 'patch';
@@ -11,7 +16,8 @@ export function toReactFlowNodes(
   snapshot: VisualizationSnapshot,
   options: { includeFrontierHandles?: boolean } = {},
 ): Node[] {
-  const laneNodes = toReactFlowLaneNodes(snapshot.swimlaneRects);
+  const laneDescriptors = getSnapshotLaneDescriptors(snapshot);
+  const laneNodes = toReactFlowLaneNodes(snapshot.swimlaneRects, laneDescriptors);
   const occurrenceNodes = snapshot.occurrences.map((occurrence) => toReactFlowOccurrenceNode({
     occurrence,
     swimlaneRects: snapshot.swimlaneRects,
@@ -23,23 +29,34 @@ export function toReactFlowNodes(
   return [...laneNodes, ...occurrenceNodes, ...frontierNodes];
 }
 
-export function toReactFlowLaneNodes(swimlaneRects: SwimlaneRect[]): Node<SwimlaneNodeData>[] {
+export function toReactFlowLaneNodes(
+  swimlaneRects: SwimlaneRect[],
+  laneDescriptors = createLaneDescriptors({ lanes: swimlaneRects.map((rect) => rect.lane) }),
+): Node<SwimlaneNodeData>[] {
   const rectByLane = new Map(swimlaneRects.map((rect) => [toVisibleLane(rect.lane), rect]));
-  return VISIBLE_LANE_ORDER.flatMap((lane) => {
-    const rect = rectByLane.get(lane);
+  return laneDescriptors.flatMap((descriptor) => {
+    const rect = rectByLane.get(descriptor.id);
     if (!rect) return [];
-    return [{
-      id: `lane:${lane}`,
-      type: 'swimlaneGroup',
-      position: { x: rect.x, y: rect.y },
-      data: { lane, label: getVisibleLaneLabel(lane) },
-      draggable: false,
-      selectable: false,
-      connectable: false,
-      zIndex: 0,
-      style: { width: rect.width, height: rect.height },
-    }];
+    return [toReactFlowLaneNode(rect, descriptor.label)];
   });
+}
+
+export function toReactFlowLaneNode(
+  rect: SwimlaneRect,
+  label = getVisibleLaneLabel(rect.lane),
+): Node<SwimlaneNodeData> {
+  const lane = toVisibleLane(rect.lane);
+  return {
+    id: `lane:${lane}`,
+    type: 'swimlaneGroup',
+    position: { x: rect.x, y: rect.y },
+    data: { lane, label },
+    draggable: false,
+    selectable: false,
+    connectable: false,
+    zIndex: 0,
+    style: { width: rect.width, height: rect.height },
+  };
 }
 
 export function toReactFlowOccurrenceNode(args: {

@@ -17,12 +17,14 @@ export const EDGE_COLORS: Record<string, string> = {
 
 export const LANE_BG: Record<VisibleLane, string> = {
   shared: 'rgba(140,111,61,0.03)',
+  role: 'rgba(86,96,150,0.04)',
   commandViewModel: 'rgba(74,144,217,0.03)',
   event: 'rgba(123,104,238,0.03)',
 };
 
 export function getLaneBg(lane: string): string {
-  return LANE_BG[toVisibleLane(lane)];
+  const visibleLane = toVisibleLane(lane);
+  return LANE_BG[visibleLane.startsWith('role:') ? 'role' : visibleLane];
 }
 
 export function getLaneLabel(lane: string): string {

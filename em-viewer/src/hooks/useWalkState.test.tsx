@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Node as DomainNode } from '@em/domain/types';
 import type { LayoutState, Occurrence, RenderedEdge, SwimlaneRect } from '@em/layout/types';
-import type { VisualizationSnapshot } from '@em/viewer-contract/types';
+import type { LaneDescriptor, VisualizationSnapshot } from '@em/viewer-contract/types';
 import { useWalkState } from './useWalkState';
 
 describe('useWalkState stateless layout navigation', () => {
@@ -124,6 +124,7 @@ function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = [])
     occurrences,
     renderedEdges,
     swimlaneRects: swimlanesFor(occurrences),
+    laneDescriptors: laneDescriptorsFor(occurrences),
     domainNodes,
     domainEdges: {},
     laneMap: Object.fromEntries(occurrences.map((occ) => [occ.canonicalNodeId, occ.lane])),
@@ -212,4 +213,12 @@ function swimlanesFor(occurrences: Occurrence[]): SwimlaneRect[] {
     { lane: 'commandViewModel', x: minX, y: 200, width: maxX - minX, height: 136 },
     { lane: 'event', x: minX, y: 400, width: maxX - minX, height: 136 },
   ];
+}
+
+function laneDescriptorsFor(occurrences: Occurrence[]): LaneDescriptor[] {
+  return [...new Set(swimlanesFor(occurrences).map((rect) => rect.lane))].map((lane) => ({
+    id: lane,
+    label: lane,
+    kind: lane === 'event' ? 'event' : lane === 'commandViewModel' ? 'commandViewModel' : 'shared',
+  }));
 }

@@ -1,10 +1,11 @@
 import type { EdgeType, Node, Edge } from '../domain/types';
 import { EVENT_MODELING_EDGE_TYPES } from '../domain/event-modeling-edges';
 import type { Graph, WalkBranch } from '../graph/graph-builder';
-import { walkGraph, resolveLaneMap } from '../graph/graph-builder';
+import { walkGraph } from '../graph/graph-builder';
 import { toDisplayNodeKind } from '../layout/types';
 import type { Branch, NormalizedPathEnvelope, PathStep } from '../layout/types';
 import type { SnapshotDirection } from './types';
+import { roleSurfaceLaneMapForBranch } from './laneAssignment';
 
 export function buildEnvelopeFromWalkBranches(args: {
   graph: Graph;
@@ -36,15 +37,16 @@ export function walkBranchesToEnvelope(args: {
 
     const path: PathStep[] = [];
     let branchDirection: 'forward' | 'backward' = 'forward';
+    const roleSurfaceLanes = args.graph ? roleSurfaceLaneMapForBranch(args.graph, walkBranch) : new Map<number, string>();
 
-    for (const step of walkBranch.path) {
+    for (const [stepIndex, step] of walkBranch.path.entries()) {
       if (step.nodeId) {
         const graphNode = args.graph?.nodes.get(step.nodeId);
         path.push({
           type: 'node',
           nodeId: step.nodeId,
           nodeKind: toDisplayNodeKind(step.nodeKind ?? graphNode?.kind ?? 'cmd'),
-          lane: laneFor(step.nodeId),
+          lane: roleSurfaceLanes.get(stepIndex) ?? laneFor(step.nodeId),
         });
       }
 
@@ -87,7 +89,6 @@ export function buildWalkEnvelope(args: {
     graph: args.graph,
     focusNodeId: args.focusNodeId,
     branches: walkResult.branches,
-    laneMap: resolveLaneMap(args.graph),
   });
 }
 

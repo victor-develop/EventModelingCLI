@@ -1,7 +1,8 @@
-import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../src/viewer-contract';
+import { buildEnvelopeFromWalkBranches, buildVisualizationSnapshot, VisualizationSnapshotError } from '../src/viewer-contract';
 import { renderLayoutAscii, renderLayoutTable } from '../src/terminal-viewer/renderers';
 import type { Edge, Node } from '../src/domain/types';
 import { createOrderWorkspace } from './helpers/order-workspace';
+import { buildGraph } from '../src/graph/graph-builder';
 
 describe('buildVisualizationSnapshot', () => {
   test('builds a renderer-agnostic snapshot from a workspace', () => {
@@ -145,6 +146,98 @@ describe('buildVisualizationSnapshot', () => {
       cleanup();
     }
   });
+
+  test('exposes role-owned shared surfaces as separate renderer-agnostic lanes', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'role.buyer', 'role', 'Buyer'));
+      workspace.saveNode(node(projectId, 'role.merchant', 'role', 'Merchant'));
+      workspace.saveNode(node(projectId, 'ui.screen.return-portal', 'ui.screen', 'Return Portal'));
+      workspace.saveNode(node(projectId, 'returns.cmd.request-return', 'cmd', 'Request Return'));
+      workspace.saveNode(node(projectId, 'returns.cmd.approve-return', 'cmd', 'Approve Return'));
+      workspace.saveEdge(edge(projectId, 'edge-buyer-request', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.request-return', 'ui.screen.return-portal'));
+      workspace.saveEdge(edge(projectId, 'edge-merchant-approve', 'roleIssuesCommand', 'role.merchant', 'returns.cmd.approve-return', 'ui.screen.return-portal'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'ui.screen.return-portal',
+        direction: 'forward',
+        hops: 1,
+      });
+      const portalLanes = snapshot.occurrences
+        .filter((occ) => occ.canonicalNodeId === 'ui.screen.return-portal')
+        .map((occ) => occ.lane)
+        .sort();
+      const laneLabels = new Map(snapshot.laneDescriptors.map((descriptor) => [descriptor.id, descriptor.label]));
+
+      expect(portalLanes).toEqual(['role:role.buyer', 'role:role.merchant']);
+      expect(snapshot.swimlaneRects.map((rect) => rect.lane)).toEqual([
+        'role:role.buyer',
+        'role:role.merchant',
+        'commandViewModel',
+      ]);
+      expect(laneLabels.get('role:role.buyer')).toBe('Buyer');
+      expect(laneLabels.get('role:role.merchant')).toBe('Merchant');
+      expect(snapshot.laneMap).toMatchObject({
+        'role:role.buyer': 'Buyer',
+        'role:role.merchant': 'Merchant',
+      });
+      expect(renderLayoutAscii(snapshot)).toContain('LANE Buyer');
+      expect(renderLayoutAscii(snapshot)).toContain('LANE Merchant');
+      expect(renderLayoutTable(snapshot)).toContain('role:role.buyer');
+      expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('assigns role lanes per path occurrence when a shared surface is revisited', () => {
+    const projectId = 'returns';
+    const nodes = [
+      node(projectId, 'role.buyer', 'role', 'Buyer'),
+      node(projectId, 'role.merchant', 'role', 'Merchant'),
+      node(projectId, 'ui.screen.return-portal', 'ui.screen', 'Return Portal'),
+      node(projectId, 'returns.cmd.request-return', 'cmd', 'Request Return'),
+      node(projectId, 'returns.evt.return-requested', 'evt', 'Return Requested'),
+      node(projectId, 'returns.vm.return-case', 'viewModel', 'Return Case'),
+      node(projectId, 'returns.cmd.approve-return', 'cmd', 'Approve Return'),
+    ];
+    const edges = [
+      edge(projectId, 'edge-buyer-request', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.request-return', 'ui.screen.return-portal'),
+      edge(projectId, 'edge-requested', 'commandCausesEvent', 'returns.cmd.request-return', 'returns.evt.return-requested'),
+      edge(projectId, 'edge-refresh-case', 'eventRefreshesViewModel', 'returns.evt.return-requested', 'returns.vm.return-case'),
+      edge(projectId, 'edge-case-to-portal', 'viewModelConsumedByUiOrProcessor', 'returns.vm.return-case', 'ui.screen.return-portal'),
+      edge(projectId, 'edge-merchant-approve', 'roleIssuesCommand', 'role.merchant', 'returns.cmd.approve-return', 'ui.screen.return-portal'),
+    ];
+    const graph = buildGraph(nodes, edges);
+
+    const envelope = buildEnvelopeFromWalkBranches({
+      graph,
+      focusNodeId: 'ui.screen.return-portal',
+      branches: [{
+        path: [
+          { nodeId: 'ui.screen.return-portal', nodeKind: 'ui.screen' },
+          { edgeId: 'edge-buyer-request', edgeType: 'roleIssuesCommand', direction: 'forward' },
+          { nodeId: 'returns.cmd.request-return', nodeKind: 'cmd' },
+          { edgeId: 'edge-requested', edgeType: 'commandCausesEvent', direction: 'forward' },
+          { nodeId: 'returns.evt.return-requested', nodeKind: 'evt' },
+          { edgeId: 'edge-refresh-case', edgeType: 'eventRefreshesViewModel', direction: 'forward' },
+          { nodeId: 'returns.vm.return-case', nodeKind: 'viewModel' },
+          { edgeId: 'edge-case-to-portal', edgeType: 'viewModelConsumedByUiOrProcessor', direction: 'forward' },
+          { nodeId: 'ui.screen.return-portal', nodeKind: 'ui.screen' },
+          { edgeId: 'edge-merchant-approve', edgeType: 'roleIssuesCommand', direction: 'forward' },
+          { nodeId: 'returns.cmd.approve-return', nodeKind: 'cmd' },
+        ],
+      }],
+    });
+
+    const portalLanes = envelope.branches[0]!.path
+      .filter((step) => step.type === 'node' && step.nodeId === 'ui.screen.return-portal')
+      .map((step) => step.type === 'node' ? step.lane : undefined);
+
+    expect(portalLanes).toEqual(['role:role.buyer', 'role:role.merchant']);
+  });
 });
 
 function node(projectId: string, canonicalId: string, kind: Node['kind'], displayName: string): Node {
@@ -165,6 +258,7 @@ function edge(
   type: Edge['type'],
   fromNodeId: string,
   toNodeId: string,
+  viaNodeId?: string,
 ): Edge {
   return {
     id,
@@ -172,5 +266,6 @@ function edge(
     type,
     fromNodeId,
     toNodeId,
+    viaNodeId,
   };
 }

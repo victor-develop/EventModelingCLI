@@ -2,6 +2,7 @@ import type { NodeProps, Node } from '@xyflow/react';
 import { Handle, Position } from '@xyflow/react';
 import { Lock } from 'lucide-react';
 import type { ReactFlowNodeData } from '../adapter/types';
+import { laneClassName } from './laneClassName';
 
 type EmNodeProps = NodeProps<Node<ReactFlowNodeData>>;
 
@@ -24,7 +25,7 @@ export function BaseOccurrenceNode(props: EmNodeProps) {
     <div className={`em-node ${props.selected ? 'is-selected' : ''} ${locked ? 'is-locked' : ''}`}>
       <Handle className="em-node-handle" type="target" position={Position.Left} />
       <div className="em-node-topline">
-        <span className={`em-node-badge lane-${data.visibleLane}`}>{kind}</span>
+        <span className={`em-node-badge ${laneClassName(data.visibleLane)}`}>{kind}</span>
         {locked && <Lock size={13} aria-label="Locked" />}
       </div>
       <div className="em-node-title" title={data.label}>{data.label}</div>

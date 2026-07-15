@@ -333,6 +333,11 @@ button {
   background: rgba(140, 111, 61, 0.08);
 }
 
+.swimlane-group.lane-role {
+  background: rgba(86, 96, 150, 0.09);
+  border-color: rgba(86, 96, 150, 0.22);
+}
+
 .swimlane-group.lane-commandViewModel {
   background: rgba(47, 111, 115, 0.08);
 }
@@ -395,6 +400,10 @@ button {
 
 .em-node-badge.lane-shared {
   background: var(--ochre);
+}
+
+.em-node-badge.lane-role {
+  background: #566096;
 }
 
 .em-node-badge.lane-commandViewModel {

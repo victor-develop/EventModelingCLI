@@ -1,15 +1,11 @@
 import type { LayoutPatch, LayoutState, Occurrence, RenderedEdge, SwimlaneRect } from '../layout/types';
-import { VISIBLE_LANE_ORDER, toVisibleLane } from './lanePolicy';
+import { createLaneDescriptorsFromOccurrences, toVisibleLane } from './lanePolicy';
 
 const SWIMLANE_PAD_X = 40;
 const SWIMLANE_PAD_Y = 40;
 const DEFAULT_LANE_HEIGHT = 136;
 const DEFAULT_LANE_WIDTH = 900;
-const LANE_BASE_Y: Record<string, number> = {
-  shared: 0,
-  commandViewModel: 200,
-  event: 400,
-};
+const LANE_HEIGHT = 200;
 
 export function normalizeOccurrencesForViewer(occurrences: Occurrence[]): Occurrence[] {
   return occurrences.map((occ) => ({
@@ -43,13 +39,15 @@ export function computeVisibleSwimlaneRects(occurrences: Occurrence[]): Swimlane
   const x = globalMinX - SWIMLANE_PAD_X;
   const width = Math.max(DEFAULT_LANE_WIDTH, globalMaxX - globalMinX + 2 * SWIMLANE_PAD_X);
 
-  return VISIBLE_LANE_ORDER.map((lane) => {
+  const laneDescriptors = createLaneDescriptorsFromOccurrences(normalized);
+
+  return laneDescriptors.map(({ id: lane }, index) => {
     const laneOccurrences = normalized.filter((occ) => occ.lane === lane);
     if (laneOccurrences.length === 0) {
       return {
         lane,
         x,
-        y: (LANE_BASE_Y[lane] ?? 0) - SWIMLANE_PAD_Y,
+        y: index * LANE_HEIGHT - SWIMLANE_PAD_Y,
         width,
         height: DEFAULT_LANE_HEIGHT,
       };

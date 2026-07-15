@@ -98,7 +98,9 @@ export function getNeighbors(
   const addEdges = (edges: Edge[], dir: 'in' | 'out') => {
     for (const e of edges) {
       if (edgeTypes && !edgeTypes.includes(e.type)) continue;
-      const targetIdCandidate = dir === 'out' ? e.toNodeId : e.fromNodeId;
+      const targetIdCandidate = dir === 'in' && e.type === 'roleIssuesCommand' && e.viaNodeId
+        ? e.viaNodeId
+        : dir === 'out' ? e.toNodeId : e.fromNodeId;
       let targetNode = graph.nodes.get(targetIdCandidate);
 
       if (!targetNode && e.viaNodeId) {
@@ -191,7 +193,9 @@ export function walkGraph(
 
       let expanded = false;
       for (const edge of filtered) {
-        const nextIdCandidate = dir === 'forward' ? edge.toNodeId : edge.fromNodeId;
+        const nextIdCandidate = dir === 'backward' && edge.type === 'roleIssuesCommand' && edge.viaNodeId
+          ? edge.viaNodeId
+          : dir === 'forward' ? edge.toNodeId : edge.fromNodeId;
         let nextNode = graph.nodes.get(nextIdCandidate);
         let actualNextId = nextIdCandidate;
 
@@ -393,34 +397,4 @@ export function findRoots(graph: Graph): RootNode[] {
   }
 
   return roots;
-}
-
-export function resolveLaneMap(graph: Graph): Map<string, string> {
-  const laneMap = new Map<string, string>();
-
-  for (const [, edge] of graph.edges) {
-    if (edge.type === 'roleIssuesCommand' && edge.viaNodeId) {
-      const roleName = edge.fromNodeId;
-      const resolved = resolveNodeId(graph, edge.viaNodeId);
-      if (resolved) {
-        laneMap.set(resolved, `role:${roleName}`);
-      }
-    }
-  }
-
-  for (const [, node] of graph.nodes) {
-    if (laneMap.has(node.canonicalId)) continue;
-
-    if (node.kind === 'cmd' || node.kind === 'viewModel') {
-      laneMap.set(node.canonicalId, 'commandViewModel');
-    } else if (node.kind === 'evt') {
-      laneMap.set(node.canonicalId, 'event');
-    } else if (node.kind === 'role') {
-      continue;
-    } else {
-      laneMap.set(node.canonicalId, 'nonRole');
-    }
-  }
-
-  return laneMap;
 }

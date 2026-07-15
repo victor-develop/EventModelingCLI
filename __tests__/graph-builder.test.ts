@@ -218,6 +218,25 @@ describe('viaNodeId fallback', () => {
     expect(pathNodeIds).toContain('ui.form.booking-form');
   });
 
+  test('walkGraph backward prefers viaNodeId surface over role node for role-issued commands', () => {
+    const nodes = [
+      makeNode('role.guest', 'role'),
+      makeNode('hotel.cmd.BookRoom', 'cmd'),
+      makeNode('ui.form.booking-form', 'ui.form' as Node['kind']),
+    ];
+    const edges: Edge[] = [
+      makeEdgeWithVia('e1', 'roleIssuesCommand', 'role.guest', 'hotel.cmd.BookRoom', 'ui.form.booking-form'),
+    ];
+    const g = buildGraph(nodes, edges);
+    const result = walkGraph(g, 'hotel.cmd.BookRoom', 'backward', undefined, 1);
+    const pathNodeIds = result.branches[0]!.path
+      .filter(s => s.nodeId)
+      .map(s => s.nodeId);
+
+    expect(pathNodeIds).toContain('ui.form.booking-form');
+    expect(pathNodeIds).not.toContain('role.guest');
+  });
+
   test('getNeighbors uses viaNodeId fallback', () => {
     const nodes = [
       makeNode('hotel.cmd.BookRoom', 'cmd'),

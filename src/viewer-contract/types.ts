@@ -8,6 +8,13 @@ import type {
 
 export type SnapshotDirection = 'forward' | 'backward' | 'both';
 
+export type LaneDescriptor = {
+  id: string;
+  label: string;
+  kind: 'role' | 'shared' | 'commandViewModel' | 'event';
+  sourceNodeId?: string;
+};
+
 export type VisualizationSnapshot = {
   focusNodeId: string;
   projectName: string;
@@ -15,6 +22,7 @@ export type VisualizationSnapshot = {
   occurrences: Occurrence[];
   renderedEdges: RenderedEdge[];
   swimlaneRects: SwimlaneRect[];
+  laneDescriptors: LaneDescriptor[];
   domainNodes: Record<string, Node>;
   domainEdges: Record<string, Edge>;
   laneMap: Record<string, string>;

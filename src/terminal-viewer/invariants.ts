@@ -1,6 +1,6 @@
 import type { Occurrence, RenderedEdge } from '../layout/types';
 import type { VisualizationSnapshot } from '../viewer-contract/types';
-import { toVisibleLane, VISIBLE_LANE_ORDER } from '../viewer-contract/lanePolicy';
+import { getSnapshotLaneDescriptors, toVisibleLane } from '../viewer-contract/lanePolicy';
 
 export type InvariantStatus = 'PASS' | 'FAIL';
 
@@ -16,7 +16,7 @@ export function renderInvariantSummary(snapshot: VisualizationSnapshot): Invaria
   const occurrences = getSnapshotOccurrences(snapshot);
   const edges = getSnapshotEdges(snapshot);
   const occurrenceIds = new Set(occurrences.map((occ) => occ.occurrenceId));
-  const visibleLaneSet = new Set<string>(VISIBLE_LANE_ORDER);
+  const visibleLaneSet = new Set<string>(getSnapshotLaneDescriptors(snapshot).map((descriptor) => descriptor.id));
 
   return {
     leftToRightEdges: edges.every(isLeftToRight) ? 'PASS' : 'FAIL',

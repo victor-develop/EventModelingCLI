@@ -1,7 +1,10 @@
 export {
+  createLaneDescriptors,
+  createLaneDescriptorsFromOccurrences,
   createVisibleLaneMap,
   getVisibleLaneLabel,
   getVisibleLaneOrder,
+  getSnapshotLaneDescriptors,
   toVisibleLane,
   VISIBLE_LANE_LABELS,
   VISIBLE_LANE_ORDER,

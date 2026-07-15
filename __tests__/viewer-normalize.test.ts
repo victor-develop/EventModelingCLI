@@ -113,6 +113,46 @@ describe('viewer normalization', () => {
     expect(widths.size).toBe(1);
     expect(normalized.updatedSwimlaneRects.find((rect) => rect.lane === 'shared')?.x).toBe(-40);
   });
+
+  test('preserves role lanes instead of collapsing them into shared', () => {
+    const buyerUi = occurrence({
+      occurrenceId: 'occ-buyer-ui',
+      canonicalNodeId: 'ui.screen.return-request',
+      nodeKind: 'shared',
+      lane: 'role:role.buyer',
+      displayRole: 'ui',
+      x: 0,
+      y: 0,
+    });
+    const merchantUi = occurrence({
+      occurrenceId: 'occ-merchant-ui',
+      canonicalNodeId: 'ui.screen.return-review',
+      nodeKind: 'shared',
+      lane: 'role:role.merchant',
+      displayRole: 'ui',
+      x: 400,
+      y: 200,
+    });
+
+    const normalized = normalizeLayoutPatchForViewer({
+      addedOccurrences: [buyerUi, merchantUi],
+      updatedOccurrences: [],
+      addedEdges: [],
+      updatedEdges: [],
+      updatedStageRange: { min: 0, max: 1 },
+      viewportHint: {},
+      updatedSwimlaneRects: [],
+    }, layoutState([buyerUi, merchantUi]));
+
+    expect(normalized.addedOccurrences.map((occ) => occ.lane)).toEqual([
+      'role:role.buyer',
+      'role:role.merchant',
+    ]);
+    expect(normalized.updatedSwimlaneRects.map((rect) => rect.lane)).toEqual([
+      'role:role.buyer',
+      'role:role.merchant',
+    ]);
+  });
 });
 
 function layoutState(occurrences: Occurrence[]): LayoutState {

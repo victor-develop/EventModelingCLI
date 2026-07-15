@@ -7,18 +7,26 @@ export {
   walkBranchesToEnvelope,
 } from './envelope';
 export {
+  createLaneDescriptors,
+  createLaneDescriptorsFromOccurrences,
   createVisibleLaneMap,
   getVisibleLaneLabel,
   getVisibleLaneOrder,
+  getSnapshotLaneDescriptors,
   toVisibleLane,
   VISIBLE_LANE_LABELS,
   VISIBLE_LANE_ORDER,
 } from './lanePolicy';
+export {
+  resolveNodeLaneMap,
+  roleSurfaceLaneForEdge,
+  roleSurfaceLaneMapForBranch,
+} from './laneAssignment';
 export {
   computeVisibleSwimlaneRects,
   normalizeLayoutPatchForViewer,
   normalizeOccurrencesForViewer,
   normalizeRenderedEdgesForViewer,
 } from './normalize';
-export type { SnapshotDirection, VisualizationSnapshot } from './types';
+export type { LaneDescriptor, SnapshotDirection, VisualizationSnapshot } from './types';
 export { VisualizationSnapshotError } from './types';

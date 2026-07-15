@@ -29,7 +29,8 @@ renderLayoutTable(snapshot: VisualizationSnapshot): string
 This case verifies:
 
 - `nonRole` normalizes to `shared`.
-- `role:*` normalizes to `shared`.
+- `role:*` remains a distinct visible role lane.
+- role lanes and shared/system lanes render separately.
 - terminal output uses visible lane labels.
 - invariant summary passes.
 

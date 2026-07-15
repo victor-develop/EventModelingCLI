@@ -12,12 +12,13 @@ FOCUS: cmd.refresh-order
 STAGES
 0 -> 1
 
-LANE shared
+LANE Customer
 [stage 0 row 0] role.customer
 name: Customer
 out: cmd.refresh-order
 
-[stage 0 row 1] trigger.clock
+LANE shared
+[stage 0 row 0] trigger.clock
 name: Clock Trigger
 out: cmd.refresh-order
 
@@ -39,4 +40,3 @@ all edges have endpoints: PASS
 all edges have route points: PASS
 visible lanes valid: PASS
 ```
-

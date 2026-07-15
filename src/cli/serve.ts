@@ -1,12 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import { Workspace } from '../workspace/workspace';
-import { buildGraph, walkGraph, findRoots, resolveLaneMap } from '../graph/graph-builder';
+import { buildGraph, walkGraph, findRoots } from '../graph/graph-builder';
 import type { Node, Edge } from '../domain/types';
 import { EVENT_MODELING_EDGE_TYPES, toEventModelingEdges } from '../domain/event-modeling-edges';
 import type { WalkBranch } from '../graph/graph-builder';
 import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
 import type { SnapshotDirection } from '../viewer-contract';
+import { resolveNodeLaneMap } from '../viewer-contract/laneAssignment';
 
 export function createServerApp(ws: Workspace): {
   app: express.Express;
@@ -28,7 +29,7 @@ export function createServerApp(ws: Workspace): {
   const domainGraph = buildGraph(nodes, edges);
   const eventModelingGraph = buildGraph(nodes, toEventModelingEdges(edges));
 
-  const laneMap = resolveLaneMap(domainGraph);
+  const laneMap = resolveNodeLaneMap(domainGraph);
 
   const nodeMap = new Map<string, Node>();
   for (const n of nodes) nodeMap.set(n.canonicalId, n);

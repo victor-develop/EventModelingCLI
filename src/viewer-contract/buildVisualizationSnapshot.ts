@@ -3,7 +3,11 @@ import { toEventModelingEdges } from '../domain/event-modeling-edges';
 import type { LayoutState } from '../layout/types';
 import { LayoutEngine } from '../layout/layout-engine';
 import type { Workspace } from '../workspace/workspace';
-import { createVisibleLaneMap } from './lanePolicy';
+import {
+  createLaneDescriptors,
+  createLaneDescriptorsFromOccurrences,
+  createVisibleLaneMap,
+} from './lanePolicy';
 import {
   computeVisibleSwimlaneRects,
   normalizeOccurrencesForViewer,
@@ -34,6 +38,7 @@ export function buildVisualizationSnapshot(args: {
 
   const nodes = args.workspace.listNodes();
   const edges = args.workspace.listEdges();
+  const allDomainNodes = Object.fromEntries(nodes.map((node) => [node.canonicalId, node]));
   const domainGraph = buildGraph(nodes, edges);
   const graph = buildGraph(nodes, toEventModelingEdges(edges));
   const resolvedFocus = resolveNodeId(domainGraph, args.focus);
@@ -57,6 +62,7 @@ export function buildVisualizationSnapshot(args: {
 
   if (envelope.branches.length === 0) {
     const emptyLayoutState = createEmptyLayoutState();
+    const laneDescriptors = createLaneDescriptors({ lanes: [], domainNodes: allDomainNodes });
     return {
       focusNodeId: resolvedFocus,
       projectName: manifest.name,
@@ -64,9 +70,10 @@ export function buildVisualizationSnapshot(args: {
       occurrences: [],
       renderedEdges: [],
       swimlaneRects: computeVisibleSwimlaneRects([]),
+      laneDescriptors,
       domainNodes: collectDomainNodes({ envelope, graph: domainGraph, focusNodeId: resolvedFocus }),
       domainEdges: {},
-      laneMap: createVisibleLaneMap(),
+      laneMap: createVisibleLaneMap(laneDescriptors),
     };
   }
 
@@ -74,17 +81,20 @@ export function buildVisualizationSnapshot(args: {
   const layoutState = engine.initLayout(envelope);
   const coreOccurrences = Object.values(layoutState.occurrences);
   const coreEdges = Object.values(layoutState.displayEdges);
+  const occurrences = normalizeOccurrencesForViewer(coreOccurrences);
+  const laneDescriptors = createLaneDescriptorsFromOccurrences(occurrences, allDomainNodes);
 
   return {
     focusNodeId: resolvedFocus,
     projectName: manifest.name,
     layoutState,
-    occurrences: normalizeOccurrencesForViewer(coreOccurrences),
+    occurrences,
     renderedEdges: normalizeRenderedEdgesForViewer(coreEdges),
     swimlaneRects: computeVisibleSwimlaneRects(coreOccurrences),
+    laneDescriptors,
     domainNodes: collectDomainNodes({ envelope, graph: domainGraph, focusNodeId: resolvedFocus }),
     domainEdges: collectDomainEdges({ envelope, graph: domainGraph }),
-    laneMap: createVisibleLaneMap(),
+    laneMap: createVisibleLaneMap(laneDescriptors),
   };
 }
 

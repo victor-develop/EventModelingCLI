@@ -1,8 +1,8 @@
 import type { Edge, Node } from '@xyflow/react';
 import type { LayoutPatch, Occurrence, RenderedEdge, SwimlaneRect } from '@em/layout/types';
-import { toVisibleLane, getVisibleLaneLabel } from './lanePolicy';
+import { createLaneDescriptors, toVisibleLane } from './lanePolicy';
 import { toReactFlowEdge } from './toReactFlowEdges';
-import { toReactFlowOccurrenceNode } from './toReactFlowNodes';
+import { toReactFlowLaneNode, toReactFlowOccurrenceNode } from './toReactFlowNodes';
 import type { SnapshotContext } from './types';
 
 type FixtureCompatiblePatch = LayoutPatch & {
@@ -25,7 +25,7 @@ export function applyLayoutPatchToReactFlow(args: {
     ...(args.patch.addedOccurrences ?? []).map((occurrence) => occurrence.occurrenceId),
     ...(args.patch.updatedOccurrences ?? []).map((occurrence) => occurrence.occurrenceId),
   ]);
-  const laneUpdate = updateLaneNodes(args.previousNodes, updatedSwimlaneRects);
+  const laneUpdate = updateLaneNodes(args.previousNodes, updatedSwimlaneRects, args.snapshotContext);
   const nodes = preserveStableChildAbsolutePositions(laneUpdate.nodes, laneUpdate.laneDeltas, occurrencePatchIds);
   const withAddedOccurrences = upsertOccurrences({
     nodes,
@@ -51,16 +51,26 @@ export function applyLayoutPatchToReactFlow(args: {
 function updateLaneNodes(
   previousNodes: Node[],
   updatedSwimlaneRects: SwimlaneRect[],
+  snapshotContext: SnapshotContext,
 ): { nodes: Node[]; laneDeltas: Map<string, { dx: number; dy: number }> } {
   if (updatedSwimlaneRects.length === 0) return { nodes: [...previousNodes], laneDeltas: new Map() };
   const rectByLane = new Map(updatedSwimlaneRects.map((rect) => [toVisibleLane(rect.lane), rect]));
+  const labelsByLane = new Map(createLaneDescriptors({
+    lanes: updatedSwimlaneRects.map((rect) => rect.lane),
+    domainNodes: snapshotContext.domainNodes,
+  }).map((descriptor) => [
+    descriptor.id,
+    snapshotContext.laneMap[descriptor.id] ?? descriptor.label,
+  ]));
   const laneDeltas = new Map<string, { dx: number; dy: number }>();
+  const seenLaneNodeIds = new Set<string>();
 
   const nodes = previousNodes.map((node) => {
     if (!node.id.startsWith('lane:')) return node;
     const lane = toVisibleLane(node.id.slice('lane:'.length));
     const rect = rectByLane.get(lane);
     if (!rect) return node;
+    seenLaneNodeIds.add(node.id);
     laneDeltas.set(node.id, {
       dx: rect.x - node.position.x,
       dy: rect.y - node.position.y,
@@ -69,9 +79,15 @@ function updateLaneNodes(
       ...node,
       position: { x: rect.x, y: rect.y },
       style: { ...(node.style ?? {}), width: rect.width, height: rect.height },
-      data: { lane, label: getVisibleLaneLabel(lane) },
+      data: { lane, label: labelsByLane.get(lane) ?? lane },
     };
   });
+
+  for (const [lane, rect] of rectByLane) {
+    const id = `lane:${lane}`;
+    if (seenLaneNodeIds.has(id) || nodes.some((node) => node.id === id)) continue;
+    nodes.push(toReactFlowLaneNode(rect, labelsByLane.get(lane)));
+  }
 
   return { nodes, laneDeltas };
 }

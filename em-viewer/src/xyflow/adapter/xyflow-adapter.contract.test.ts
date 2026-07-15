@@ -83,6 +83,129 @@ describe('xyflow adapter contract fixtures', () => {
     expect(next.nodes.find((node) => node.id === 'frontier:left')?.position.x).toBe(304);
     expect(next.nodes.find((node) => node.id === 'frontier:right')?.position.x).toBe(672);
   });
+
+  test('creates dynamic role lane groups and parents role-owned occurrences to them', () => {
+    const snapshot = {
+      focusNodeId: 'ui.screen.return-portal',
+      projectName: 'Returns',
+      layoutState: {},
+      occurrences: [
+        {
+          occurrenceId: 'occ-buyer-portal',
+          canonicalNodeId: 'ui.screen.return-portal',
+          nodeKind: 'shared',
+          lane: 'role:role.buyer',
+          stageIndex: 0,
+          rowIndex: 0,
+          displayRole: 'ui',
+          branchClusterId: 'fwd_0',
+          lockLevel: 'none',
+          x: 0,
+          y: 0,
+          width: 220,
+          height: 56,
+        },
+        {
+          occurrenceId: 'occ-request-return',
+          canonicalNodeId: 'returns.cmd.request-return',
+          nodeKind: 'cmd',
+          lane: 'commandViewModel',
+          stageIndex: 1,
+          rowIndex: 0,
+          displayRole: 'command',
+          branchClusterId: 'fwd_0',
+          lockLevel: 'none',
+          x: 400,
+          y: 200,
+          width: 220,
+          height: 56,
+        },
+      ],
+      renderedEdges: [],
+      swimlaneRects: [
+        { lane: 'role:role.buyer', x: -40, y: -40, width: 700, height: 136 },
+        { lane: 'commandViewModel', x: -40, y: 160, width: 700, height: 136 },
+      ],
+      laneDescriptors: [
+        { id: 'role:role.buyer', kind: 'role', label: 'Buyer', sourceNodeId: 'role.buyer' },
+        { id: 'commandViewModel', kind: 'commandViewModel', label: 'command / viewModel' },
+      ],
+      domainNodes: {
+        'ui.screen.return-portal': {
+          id: 'ui.screen.return-portal',
+          projectId: 'returns',
+          kind: 'ui.screen',
+          canonicalId: 'ui.screen.return-portal',
+          displayName: 'Return Portal',
+          tags: [],
+          domains: [],
+        },
+      },
+      domainEdges: {},
+      laneMap: {
+        'role:role.buyer': 'Buyer',
+        commandViewModel: 'command / viewModel',
+      },
+    } as VisualizationSnapshot;
+
+    const nodes = toReactFlowNodes(snapshot);
+
+    expect(nodes.find((node) => node.id === 'lane:role:role.buyer')?.data).toEqual({
+      lane: 'role:role.buyer',
+      label: 'Buyer',
+    });
+    expect(nodes.find((node) => node.id === 'occ-buyer-portal')?.parentId).toBe('lane:role:role.buyer');
+  });
+
+  test('applies a patch that introduces a role lane group', () => {
+    const previousNodes = [
+      { id: 'lane:commandViewModel', type: 'swimlaneGroup', position: { x: -40, y: 160 }, style: { width: 900, height: 136 }, data: { lane: 'commandViewModel', label: 'command / viewModel' } },
+    ];
+    const patch = {
+      addedOccurrences: [
+        {
+          occurrenceId: 'occ-buyer-portal',
+          canonicalNodeId: 'ui.screen.return-portal',
+          nodeKind: 'shared',
+          lane: 'role:role.buyer',
+          stageIndex: 0,
+          rowIndex: 0,
+          displayRole: 'ui',
+          branchClusterId: 'fwd_0',
+          lockLevel: 'none',
+          x: 0,
+          y: 0,
+          width: 220,
+          height: 56,
+        },
+      ],
+      updatedOccurrences: [],
+      addedEdges: [],
+      updatedEdges: [],
+      updatedSwimlaneRects: [
+        { lane: 'role:role.buyer', x: -40, y: -40, width: 700, height: 136 },
+        { lane: 'commandViewModel', x: -40, y: 160, width: 700, height: 136 },
+      ],
+      updatedStageRange: { min: 0, max: 1 },
+      viewportHint: {},
+    } satisfies FixtureCompatiblePatch;
+
+    const next = applyLayoutPatchToReactFlow({
+      patch,
+      previousNodes: previousNodes as Node[],
+      previousEdges: [],
+      snapshotContext: {
+        domainNodes: {},
+        laneMap: { 'role:role.buyer': 'Buyer' },
+      },
+    });
+
+    expect(next.nodes.find((node) => node.id === 'lane:role:role.buyer')?.data).toEqual({
+      lane: 'role:role.buyer',
+      label: 'Buyer',
+    });
+    expect(next.nodes.find((node) => node.id === 'occ-buyer-portal')?.parentId).toBe('lane:role:role.buyer');
+  });
 });
 
 function readJsonFence<T = unknown>(filePath: string): T {

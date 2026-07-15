@@ -1,10 +1,9 @@
 import type { Node } from '../domain/types';
 import type { Occurrence, RenderedEdge, SwimlaneRect } from '../layout/types';
 import {
-  getVisibleLaneLabel,
   getVisibleLaneOrder,
+  getSnapshotLaneDescriptors,
   toVisibleLane,
-  VISIBLE_LANE_ORDER,
 } from '../viewer-contract/lanePolicy';
 import type { VisualizationSnapshot } from '../viewer-contract/types';
 import {
@@ -16,7 +15,8 @@ import {
 } from './invariants';
 
 export function renderLayoutTable(snapshot: VisualizationSnapshot): string {
-  const occurrences = sortOccurrencesForTable(getSnapshotOccurrences(snapshot));
+  const laneDescriptors = getSnapshotLaneDescriptors(snapshot);
+  const occurrences = sortOccurrencesForTable(getSnapshotOccurrences(snapshot), laneDescriptors);
   const edges = sortEdgesForTable(getSnapshotEdges(snapshot), occurrences);
   const swimlaneRects = getSnapshotSwimlaneRects(snapshot);
   const lines: string[] = [];
@@ -60,7 +60,7 @@ export function renderLayoutTable(snapshot: VisualizationSnapshot): string {
   lines.push('');
   lines.push('SWIMLANES');
   lines.push('lane | x | y | width | height');
-  for (const rect of sortSwimlaneRects(swimlaneRects)) {
+  for (const rect of sortSwimlaneRects(swimlaneRects, laneDescriptors)) {
     lines.push([
       toVisibleLane(rect.lane),
       rect.x,
@@ -81,6 +81,7 @@ export function renderLayoutAscii(snapshot: VisualizationSnapshot): string {
   const occurrences = getSnapshotOccurrences(snapshot);
   const edges = getSnapshotEdges(snapshot);
   const occurrenceById = new Map(occurrences.map((occ) => [occ.occurrenceId, occ]));
+  const laneDescriptors = getSnapshotLaneDescriptors(snapshot);
   const lines: string[] = [];
 
   lines.push(`PROJECT: ${snapshot.projectName}`);
@@ -90,8 +91,8 @@ export function renderLayoutAscii(snapshot: VisualizationSnapshot): string {
   lines.push(renderStages(occurrences));
   lines.push('');
 
-  for (const lane of VISIBLE_LANE_ORDER) {
-    lines.push(`LANE ${getVisibleLaneLabel(lane)}`);
+  for (const { id: lane, label } of laneDescriptors) {
+    lines.push(`LANE ${label}`);
     const laneOccurrences = sortOccurrencesForLane(occurrences.filter((occ) => toVisibleLane(occ.lane) === lane));
     for (let index = 0; index < laneOccurrences.length; index++) {
       const occ = laneOccurrences[index]!;
@@ -131,11 +132,14 @@ function getSnapshotSwimlaneRects(snapshot: VisualizationSnapshot): SwimlaneRect
   return Array.isArray(layoutRects) ? layoutRects : [];
 }
 
-function sortOccurrencesForTable(occurrences: Occurrence[]): Occurrence[] {
+function sortOccurrencesForTable(
+  occurrences: Occurrence[],
+  laneDescriptors: ReturnType<typeof getSnapshotLaneDescriptors>,
+): Occurrence[] {
   return [...occurrences].sort((a, b) => (
     a.stageIndex - b.stageIndex ||
     a.rowIndex - b.rowIndex ||
-    getVisibleLaneOrder(a.lane) - getVisibleLaneOrder(b.lane) ||
+    getVisibleLaneOrder(a.lane, laneDescriptors) - getVisibleLaneOrder(b.lane, laneDescriptors) ||
     a.occurrenceId.localeCompare(b.occurrenceId)
   ));
 }
@@ -156,7 +160,10 @@ function sortEdgesForTable(edges: RenderedEdge[], occurrences: Occurrence[]): Re
     .map((entry) => entry.edge);
 }
 
-function sortSwimlaneRects(rects: SwimlaneRect[]): SwimlaneRect[] {
+function sortSwimlaneRects(
+  rects: SwimlaneRect[],
+  laneDescriptors: ReturnType<typeof getSnapshotLaneDescriptors>,
+): SwimlaneRect[] {
   const bestRectByLane = new Map<string, SwimlaneRect>();
   for (const rect of rects) {
     const lane = toVisibleLane(rect.lane);
@@ -178,7 +185,7 @@ function sortSwimlaneRects(rects: SwimlaneRect[]): SwimlaneRect[] {
     }
   }
 
-  return VISIBLE_LANE_ORDER.flatMap((lane) => {
+  return laneDescriptors.flatMap(({ id: lane }) => {
     const rect = bestRectByLane.get(lane);
     return rect ? [rect] : [];
   });

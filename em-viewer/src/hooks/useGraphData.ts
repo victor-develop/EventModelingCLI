@@ -1,8 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Node, Edge } from '@em/domain/types';
 import type { WalkBranch } from '@em/graph/graph-builder';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
 import type { RootNodeInfo } from '../types';
+import { fetchLayout } from './layoutApi';
+import type { LayoutRequest } from './layoutRequest';
+import {
+  defaultLayoutRequest,
+  readLayoutRequestFromLocation,
+  writeLayoutRequestToLocation,
+} from './layoutRequest';
 
 export interface InitResponse {
   focusNodeId: string;
@@ -19,70 +26,114 @@ export interface RootsResponse {
   laneMap: Record<string, string>;
 }
 
+type NavigateMode = 'push' | 'replace';
+
 export function useGraphData() {
   const [data, setData] = useState<VisualizationSnapshot | null>(null);
   const [rootsData, setRootsData] = useState<RootsResponse | null>(null);
+  const [layoutRequest, setLayoutRequest] = useState<LayoutRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const successfulRequestRef = useRef<LayoutRequest | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     fetch('/api/roots')
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<RootsResponse>;
       })
       .then(async (rootsResp) => {
-        const firstFocus = getFocusFromLocation() ?? rootsResp.roots[0]?.canonicalId;
-        const layoutResp = await fetchLayout(firstFocus);
-        setData(layoutResp);
+        const request = readLayoutRequestFromLocation(rootsResp.roots[0]?.canonicalId);
+        if (cancelled) return;
         setRootsData(rootsResp);
-        setLoading(false);
+        setLayoutRequest(request);
       })
       .catch(err => {
+        if (cancelled) return;
         setError(err.message);
         setLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const navigateLayout = useCallback((request: LayoutRequest, mode: NavigateMode = 'push') => {
+    setError(null);
+    if (successfulRequestRef.current) setSwitching(true);
+    else setLoading(true);
+    writeLayoutRequestToLocation(request, mode);
+    setLayoutRequest(request);
   }, []);
 
   const refocus = useCallback((newFocusId: string) => {
-    setSwitching(true);
-    setFocusLocation(newFocusId);
-    fetchLayout(newFocusId)
-      .then(initResp => {
-        setData(initResp);
-        setSwitching(false);
+    navigateLayout(defaultLayoutRequest(newFocusId), 'push');
+  }, [navigateLayout]);
+
+  useEffect(() => {
+    if (!layoutRequest) return;
+    let cancelled = false;
+
+    fetchLayout(layoutRequest)
+      .then(layoutResp => {
+        if (cancelled) return;
+        const fallback = successfulRequestRef.current;
+        if (fallback && isEmptyWalk(layoutRequest, layoutResp)) {
+          writeLayoutRequestToLocation(fallback, 'replace');
+          setLayoutRequest(fallback);
+          return;
+        }
+
+        successfulRequestRef.current = layoutRequest;
+        setData(layoutResp);
       })
       .catch(err => {
+        if (cancelled) return;
         setError(err.message);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
         setSwitching(false);
       });
-  }, []);
 
-  return { data, rootsData, loading, switching, error, refocus };
+    return () => {
+      cancelled = true;
+    };
+  }, [layoutRequest]);
+
+  useEffect(() => {
+    if (!rootsData) return;
+
+    const onPopState = () => {
+      if (successfulRequestRef.current) setSwitching(true);
+      else setLoading(true);
+      setError(null);
+      setLayoutRequest(readLayoutRequestFromLocation(rootsData.roots[0]?.canonicalId));
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [rootsData]);
+
+  return {
+    data,
+    rootsData,
+    loading,
+    switching,
+    error,
+    layoutRequest,
+    navigateLayout,
+    refocus,
+  };
 }
 
-function getFocusFromLocation(): string | undefined {
-  const focus = new URLSearchParams(window.location.search).get('focus')?.trim();
-  return focus || undefined;
-}
-
-function setFocusLocation(focus: string): void {
-  const url = new URL(window.location.href);
-  url.searchParams.set('focus', focus);
-  window.history.replaceState(null, '', url);
-}
-
-function fetchLayout(focus?: string): Promise<VisualizationSnapshot> {
-  const params = new URLSearchParams({ direction: 'both', hops: '2' });
-  if (focus) params.set('focus', focus);
-  return fetch(`/api/layout?${params.toString()}`).then(async r => {
-    if (!r.ok) {
-      const body = await r.json().catch(() => undefined) as { error?: { message?: string } } | undefined;
-      throw new Error(body?.error?.message ?? `HTTP ${r.status}`);
-    }
-    return r.json() as Promise<VisualizationSnapshot>;
-  });
+function isEmptyWalk(request: LayoutRequest, snapshot: VisualizationSnapshot): boolean {
+  return request.direction !== 'both' && snapshot.occurrences.length === 0;
 }
 
 export function getDisplayName(nodeMap: Record<string, Node> | null, canonicalNodeId: string): string {

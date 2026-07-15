@@ -1,0 +1,65 @@
+import { afterEach, describe, expect, test } from 'vitest';
+import {
+  defaultLayoutRequest,
+  layoutRequestToApiSearchParams,
+  readLayoutRequestFromLocation,
+  walkLayoutRequest,
+  writeLayoutRequestToLocation,
+} from './layoutRequest';
+
+describe('layoutRequest URL helpers', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+  });
+
+  test('reads shareable layout params from the current URL', () => {
+    window.history.replaceState(null, '', '/?focus=ui.screen.return-detail&direction=backward&hops=3');
+
+    expect(readLayoutRequestFromLocation('ui.screen.fallback')).toEqual({
+      focus: 'ui.screen.return-detail',
+      direction: 'backward',
+      hops: 3,
+    });
+  });
+
+  test('falls back to a default root and bounded defaults for invalid params', () => {
+    window.history.replaceState(null, '', '/?direction=sideways&hops=-4');
+
+    expect(readLayoutRequestFromLocation('ui.screen.return-lookup')).toEqual({
+      focus: 'ui.screen.return-lookup',
+      direction: 'both',
+      hops: 2,
+    });
+  });
+
+  test('writes walk params for share links while preserving unrelated params', () => {
+    window.history.replaceState(null, '', '/?theme=dark');
+
+    writeLayoutRequestToLocation(walkLayoutRequest('returns.view.order-summary', 'forward'));
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('theme')).toBe('dark');
+    expect(params.get('focus')).toBe('returns.view.order-summary');
+    expect(params.get('direction')).toBe('forward');
+    expect(params.get('hops')).toBe('3');
+  });
+
+  test('omits default direction and hops for base focus URLs', () => {
+    window.history.replaceState(null, '', '/?focus=old&direction=forward&hops=3');
+
+    writeLayoutRequestToLocation(defaultLayoutRequest('ui.screen.app-installation'));
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('focus')).toBe('ui.screen.app-installation');
+    expect(params.has('direction')).toBe(false);
+    expect(params.has('hops')).toBe(false);
+  });
+
+  test('always includes direction and hops for API requests', () => {
+    const params = layoutRequestToApiSearchParams(defaultLayoutRequest('ui.screen.return-lookup'));
+
+    expect(params.get('focus')).toBe('ui.screen.return-lookup');
+    expect(params.get('direction')).toBe('both');
+    expect(params.get('hops')).toBe('2');
+  });
+});

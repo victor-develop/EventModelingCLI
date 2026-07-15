@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Node as DomainNode } from '@em/domain/types';
 import type { LayoutState, Occurrence, RenderedEdge, SwimlaneRect } from '@em/layout/types';
@@ -10,7 +10,7 @@ describe('useWalkState stateless layout navigation', () => {
     vi.restoreAllMocks();
   });
 
-  test('walkRight requests a bounded layout snapshot and replaces the visible snapshot without local layout mutation', async () => {
+  test('walkRight emits a bounded layout request and waits for parent hydration', () => {
     const initial = snapshot([
       occurrence('occ-leftmost-old', 'ui.screen.return-lookup', 'shared', 0),
       occurrence('occ-cmd-lookup-order', 'returns.cmd.lookup-order', 'cmd', 1),
@@ -21,95 +21,63 @@ describe('useWalkState stateless layout navigation', () => {
       occurrence('occ-ui-return-form', 'ui.screen.return-request-form', 'shared', 1),
     ]);
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.startsWith('/api/layout')) return jsonResponse(next);
-      if (url.startsWith('/api/walk')) return jsonResponse({ branches: [], nodes: {}, edges: {}, laneMap: {} });
-      return new Response(null, { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', vi.fn());
+    const onNavigate = vi.fn();
 
-    const { result } = renderHook(() => useWalkState(initial));
+    const { result, rerender } = renderHook(
+      ({ data }) => useWalkState(data, { onNavigate }),
+      { initialProps: { data: initial } },
+    );
 
     act(() => {
       result.current.walkRight();
     });
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-
-    const requested = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost');
-    expect(requested.pathname).toBe('/api/layout');
-    expect(requested.searchParams.get('focus')).toBe('returns.evt.order-lookup-completed');
-    expect(requested.searchParams.get('direction')).toBe('forward');
-    expect(requested.searchParams.get('hops')).toBe('3');
-    expect(requested.searchParams.has('width')).toBe(false);
-    expect(requested.searchParams.has('shift')).toBe(false);
-    expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith('/api/walk'))).toBe(false);
-
-    await waitFor(() => {
-      const currentSnapshot = (result.current as typeof result.current & { snapshot?: VisualizationSnapshot }).snapshot;
-      expect(currentSnapshot).toEqual(next);
-      expect(currentSnapshot?.occurrences.map((occ) => occ.occurrenceId)).toEqual([
-        'occ-vm-order-summary',
-        'occ-ui-return-form',
-      ]);
-      expect(Object.keys(currentSnapshot?.layoutState.occurrences ?? {})).toEqual([
-        'occ-vm-order-summary',
-        'occ-ui-return-form',
-      ]);
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'returns.evt.order-lookup-completed',
+      direction: 'forward',
+      hops: 3,
     });
+
+    expect(fetch).not.toHaveBeenCalled();
+
+    rerender({ data: next });
+
+    const currentSnapshot = (result.current as typeof result.current & { snapshot?: VisualizationSnapshot }).snapshot;
+    expect(currentSnapshot).toEqual(next);
+    expect(currentSnapshot?.occurrences.map((occ) => occ.occurrenceId)).toEqual([
+      'occ-vm-order-summary',
+      'occ-ui-return-form',
+    ]);
+    expect(Object.keys(currentSnapshot?.layoutState.occurrences ?? {})).toEqual([
+      'occ-vm-order-summary',
+      'occ-ui-return-form',
+    ]);
   });
 
-  test('walkLeft requests a backward layout snapshot from the left frontier with viewer-agnostic params', async () => {
+  test('walkLeft emits a backward layout request from the left frontier', () => {
     const initial = snapshot([
       occurrence('occ-later-view', 'returns.view.order-summary', 'viewModel', 8),
       occurrence('occ-earliest-ui', 'ui.screen.return-lookup', 'shared', 3),
       occurrence('occ-middle-cmd', 'returns.cmd.lookup-order', 'cmd', 5),
     ]);
-    const previous = snapshot([
-      occurrence('occ-previous-event', 'returns.evt.return-created', 'evt', 0),
-    ]);
+    vi.stubGlobal('fetch', vi.fn());
+    const onNavigate = vi.fn();
 
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.startsWith('/api/layout')) return jsonResponse(previous);
-      if (url.startsWith('/api/walk')) return jsonResponse({ branches: [], nodes: {}, edges: {}, laneMap: {} });
-      return new Response(null, { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { result } = renderHook(() => useWalkState(initial));
+    const { result } = renderHook(() => useWalkState(initial, { onNavigate }));
 
     act(() => {
       result.current.walkLeft();
     });
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-
-    const requested = new URL(String(fetchMock.mock.calls[0]?.[0]), 'http://localhost');
-    expect(requested.pathname).toBe('/api/layout');
-    expect(requested.searchParams.get('focus')).toBe('ui.screen.return-lookup');
-    expect(requested.searchParams.get('direction')).toBe('backward');
-    expect(requested.searchParams.get('hops')).toBe('3');
-    expect(requested.searchParams.has('width')).toBe(false);
-    expect(requested.searchParams.has('shift')).toBe(false);
-    expect(fetchMock.mock.calls.some((call) => String(call[0]).startsWith('/api/walk'))).toBe(false);
-
-    await waitFor(() => {
-      const currentSnapshot = (result.current as typeof result.current & { snapshot?: VisualizationSnapshot }).snapshot;
-      expect(currentSnapshot).toEqual(previous);
-      expect(currentSnapshot?.occurrences.map((occ) => occ.occurrenceId)).toEqual(['occ-previous-event']);
-      expect(Object.keys(currentSnapshot?.layoutState.occurrences ?? {})).toEqual(['occ-previous-event']);
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'ui.screen.return-lookup',
+      direction: 'backward',
+      hops: 3,
     });
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
-
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
 
 function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = []): VisualizationSnapshot {
   const domainNodes = Object.fromEntries(

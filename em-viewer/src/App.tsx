@@ -9,7 +9,7 @@ import { FlowNavigator } from './components/FlowNavigator';
 import { XyflowCanvas } from './xyflow/components/XyflowCanvas';
 
 function App() {
-  const { data, rootsData, loading, switching, error, refocus } = useGraphData();
+  const { data, rootsData, loading, switching, error, navigateLayout, refocus } = useGraphData();
   const {
     snapshot: walkSnapshot,
     walkLeft,
@@ -20,7 +20,7 @@ function App() {
     canWalkRight,
     walkCount,
     isWalking,
-  } = useWalkState(data);
+  } = useWalkState(data, { onNavigate: navigateLayout });
   const [navCollapsed, setNavCollapsed] = useState(false);
   const visibleSnapshot = walkSnapshot ?? data;
 

@@ -1,5 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
+import type { LayoutRequest } from './layoutRequest';
+import { walkLayoutRequest } from './layoutRequest';
 
 interface UseWalkStateResult {
   snapshot: VisualizationSnapshot | null;
@@ -13,84 +15,77 @@ interface UseWalkStateResult {
   isWalking: boolean;
 }
 
-export function useWalkState(initData: VisualizationSnapshot | null): UseWalkStateResult {
-  const [snapshot, setSnapshot] = useState<VisualizationSnapshot | null>(initData);
+interface UseWalkStateOptions {
+  onNavigate?: (request: LayoutRequest) => void;
+}
+
+interface DraftSnapshot {
+  base: VisualizationSnapshot | null;
+  snapshot: VisualizationSnapshot;
+}
+
+export function useWalkState(
+  initData: VisualizationSnapshot | null,
+  options: UseWalkStateOptions = {},
+): UseWalkStateResult {
+  const [draft, setDraft] = useState<DraftSnapshot | null>(null);
   const [walkCount, setWalkCount] = useState(0);
-  const isWalkingRef = useRef(false);
-  const [canWalkLeft, setCanWalkLeft] = useState(true);
-  const [canWalkRight, setCanWalkRight] = useState(true);
-  const [isWalking, setIsWalking] = useState(false);
+  const { onNavigate } = options;
+  const snapshot = useMemo(() => (
+    draft?.base === initData ? draft.snapshot : initData
+  ), [draft, initData]);
 
-  useEffect(() => {
-    setSnapshot(initData);
-    setWalkCount(0);
-    setCanWalkLeft(true);
-    setCanWalkRight(true);
-    setIsWalking(false);
-  }, [initData]);
-
-  const walk = useCallback(async (direction: 'forward' | 'backward') => {
-    if (!snapshot || isWalkingRef.current) return;
-    isWalkingRef.current = true;
-    setIsWalking(true);
-
+  const walk = useCallback((direction: 'forward' | 'backward') => {
+    if (!snapshot || !onNavigate) return;
     const preferHighStage = direction === 'forward';
+    const occs = snapshot.occurrences;
+    if (occs.length === 0) return;
 
-    try {
-      const occs = snapshot.occurrences;
-      if (occs.length === 0) return;
+    const sorted = [...occs].sort((a, b) => (
+      preferHighStage
+        ? (b.stageIndex - a.stageIndex) || (b.x - a.x)
+        : (a.stageIndex - b.stageIndex) || (a.x - b.x)
+    ));
+    const frontier = sorted[0];
+    if (!frontier) return;
 
-      const sorted = [...occs].sort((a, b) => (
-        preferHighStage
-          ? (b.stageIndex - a.stageIndex) || (b.x - a.x)
-          : (a.stageIndex - b.stageIndex) || (a.x - b.x)
-      ));
-      const frontier = sorted[0];
-      if (!frontier) return;
-
-      const resp = await fetchLayout(frontier.canonicalNodeId, direction);
-      if (!resp.ok) {
-        if (preferHighStage) setCanWalkRight(false);
-        else setCanWalkLeft(false);
-        return;
-      }
-      const nextSnapshot = await resp.json() as VisualizationSnapshot;
-      if (nextSnapshot.occurrences.length === 0) {
-        if (preferHighStage) setCanWalkRight(false);
-        else setCanWalkLeft(false);
-        return;
-      }
-
-      setSnapshot(nextSnapshot);
-      setWalkCount(c => c + 1);
-    } finally {
-      isWalkingRef.current = false;
-      setIsWalking(false);
-    }
-  }, [snapshot]);
+    onNavigate(walkLayoutRequest(frontier.canonicalNodeId, direction));
+    setWalkCount(c => c + 1);
+  }, [onNavigate, snapshot]);
 
   const walkRight = useCallback(() => { walk('forward'); }, [walk]);
   const walkLeft = useCallback(() => { walk('backward'); }, [walk]);
 
   const setOccurrenceLock = useCallback((occurrenceId: string, lockLevel: 'hard' | 'none') => {
-    setSnapshot((current) => current ? updateOccurrenceLock(current, occurrenceId, lockLevel) : current);
-  }, []);
+    setDraft((current) => {
+      const currentSnapshot = current?.base === initData ? current.snapshot : initData;
+      if (!currentSnapshot) return current;
+      return {
+        base: initData,
+        snapshot: updateOccurrenceLock(currentSnapshot, occurrenceId, lockLevel),
+      };
+    });
+  }, [initData]);
 
   const resetOccurrencePosition = useCallback((occurrenceId: string) => {
-    setSnapshot((current) => {
-      if (!current) return current;
+    setDraft((current) => {
+      const currentSnapshot = current?.base === initData ? current.snapshot : initData;
+      if (!currentSnapshot) return current;
       const baseline = initData?.layoutState.occurrences[occurrenceId];
-      const occurrence = current.layoutState.occurrences[occurrenceId];
+      const occurrence = currentSnapshot.layoutState.occurrences[occurrenceId];
       if (!baseline || !occurrence) return current;
-      return updateOccurrence(current, occurrenceId, {
-        lane: baseline.lane,
-        stageIndex: baseline.stageIndex,
-        rowIndex: baseline.rowIndex,
-        x: baseline.x,
-        y: baseline.y,
-        width: baseline.width,
-        height: baseline.height,
-      });
+      return {
+        base: initData,
+        snapshot: updateOccurrence(currentSnapshot, occurrenceId, {
+          lane: baseline.lane,
+          stageIndex: baseline.stageIndex,
+          rowIndex: baseline.rowIndex,
+          x: baseline.x,
+          y: baseline.y,
+          width: baseline.width,
+          height: baseline.height,
+        }),
+      };
     });
   }, [initData]);
 
@@ -100,23 +95,11 @@ export function useWalkState(initData: VisualizationSnapshot | null): UseWalkSta
     walkRight,
     setOccurrenceLock,
     resetOccurrencePosition,
-    canWalkLeft,
-    canWalkRight,
+    canWalkLeft: Boolean(snapshot?.occurrences.length),
+    canWalkRight: Boolean(snapshot?.occurrences.length),
     walkCount,
-    isWalking,
+    isWalking: false,
   };
-}
-
-function fetchLayout(
-  focus: string,
-  direction: 'forward' | 'backward',
-): Promise<Response> {
-  const params = new URLSearchParams({
-    focus,
-    direction,
-    hops: '3',
-  });
-  return fetch(`/api/layout?${params.toString()}`);
 }
 
 function updateOccurrenceLock(

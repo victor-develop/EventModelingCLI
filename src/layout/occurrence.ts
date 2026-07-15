@@ -2,6 +2,8 @@ import {
   NormalizedPathEnvelope,
   Occurrence,
   DisplayRole,
+  DisplayEdgeKind,
+  DisplayNodeKind,
   toDisplayNodeKind,
   toDisplayLane,
   LayoutConfig,
@@ -17,6 +19,9 @@ export interface EdgeOccurrenceLink {
   toOccId: string;
   originalEdgeId: string;
   originalEdgeType: string;
+  displayEdgeKind?: DisplayEdgeKind;
+  displayFromNodeKind?: DisplayNodeKind;
+  displayToNodeKind?: DisplayNodeKind;
 }
 
 export interface OccurrenceBuildResult {
@@ -30,6 +35,7 @@ function nextOccId(counter: { value: number }): string {
 }
 
 function inferDisplayRole(nodeKind: string): DisplayRole {
+  if (nodeKind === 'role') return 'role';
   if (nodeKind === 'cmd') return 'command';
   if (nodeKind === 'evt') return 'event';
   if (nodeKind === 'viewModel') return 'projection';
@@ -79,7 +85,7 @@ export function buildOccurrenceModel(
       occurrenceIdByDedupKey.set(dedupKey, occurrenceId);
       pathOccurrenceIds.set(node, occurrenceId);
 
-      const lane = node.lane ?? toDisplayLane(displayKind);
+      const lane = node.lane ?? toDisplayLane(displayKind, node.nodeId);
 
       occurrences.push({
         occurrenceId,
@@ -119,6 +125,8 @@ export function mergeOccurrences(
 
   for (const inc of incoming) {
     const matchIdx = merged.findIndex(e =>
+      inc.displayRole !== 'role' &&
+      e.displayRole !== 'role' &&
       e.canonicalNodeId === inc.canonicalNodeId &&
       e.stageIndex === inc.stageIndex &&
       e.displayRole === inc.displayRole &&
@@ -231,6 +239,8 @@ export function buildEdgeOccurrenceLinks(
         toOccId: toOcc.occurrenceId,
         originalEdgeId: (edge as PathEdge).edgeId,
         originalEdgeType: (edge as PathEdge).edgeType,
+        displayFromNodeKind: fromOcc.nodeKind,
+        displayToNodeKind: toOcc.nodeKind,
       });
     }
   }
@@ -244,7 +254,7 @@ function occurrenceDedupKey(
   branchId: string,
   visitIndex: number,
 ): string {
-  if (displayKind === 'shared') return `${nodeId}:${branchId}:${visitIndex}`;
+  if (displayKind === 'shared' || displayKind === 'role') return `${nodeId}:${branchId}:${visitIndex}`;
   if (visitIndex > 0) return `${nodeId}:${branchId}:${visitIndex}`;
   return nodeId;
 }

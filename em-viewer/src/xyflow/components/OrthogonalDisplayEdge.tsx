@@ -4,6 +4,7 @@ import type { OrthogonalEdgeData } from '../adapter/types';
 type OrthogonalProps = EdgeProps<Edge<OrthogonalEdgeData>>;
 
 const EDGE_CLASS: Record<string, string> = {
+  'role-to-shared': 'edge-role-shared',
   'shared-to-cmd': 'edge-shared-cmd',
   'cmd-to-evt': 'edge-cmd-evt',
   'evt-to-viewModel': 'edge-evt-view',

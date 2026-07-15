@@ -14,6 +14,7 @@ export const nodeTypes = {
   'em.ui': SharedNode,
   'em.trigger': SharedNode,
   'em.proc': SharedNode,
+  'em.role': SharedNode,
   'em.shared': SharedNode,
   frontierHandle: FrontierHandleNode,
 } satisfies NodeTypes;

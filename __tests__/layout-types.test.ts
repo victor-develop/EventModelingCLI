@@ -17,6 +17,11 @@ describe('layout types helpers', () => {
     expect(toDisplayLane('shared')).toBe('nonRole');
   });
 
+  test('toDisplayLane requires a canonical node id for role lanes', () => {
+    expect(() => toDisplayLane('role')).toThrow('Role display lane requires a canonical node id');
+    expect(toDisplayLane('role', 'role.merchant')).toBe('role:role.merchant');
+  });
+
   test('toDisplayNodeKind maps ui.screen to shared', () => {
     expect(toDisplayNodeKind('ui.screen')).toBe('shared');
   });

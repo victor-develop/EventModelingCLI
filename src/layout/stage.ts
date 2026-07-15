@@ -7,6 +7,7 @@ import {
 } from './types';
 
 const ANCHOR_STAGE_MAP: Record<DisplayNodeKind, number> = {
+  role: 0,
   shared: 0,
   cmd: 1,
   evt: 2,
@@ -14,6 +15,7 @@ const ANCHOR_STAGE_MAP: Record<DisplayNodeKind, number> = {
 };
 
 const STAGE_OFFSET: Record<DisplayNodeKind, number> = {
+  role: 0,
   shared: 0,
   cmd: 1,
   evt: 2,

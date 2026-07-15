@@ -79,7 +79,10 @@ export function toReactFlowOccurrenceNode(args: {
     },
     data: {
       canonicalNodeId: args.occurrence.canonicalNodeId,
-      label: getDomainNodeLabel(args.domainNodes[args.occurrence.canonicalNodeId], args.occurrence.canonicalNodeId),
+      label: getDomainNodeLabel(
+        args.domainNodes[args.occurrence.canonicalNodeId],
+        args.occurrence.canonicalNodeId,
+      ),
       visibleLane,
       lockLevel,
     },
@@ -98,6 +101,7 @@ export function toReactFlowOccurrenceNode(args: {
 }
 
 function toOccurrenceNodeType(occurrence: Occurrence): string {
+  if (occurrence.nodeKind === 'role' || occurrence.displayRole === 'role') return 'em.role';
   if (occurrence.nodeKind === 'cmd') return 'em.cmd';
   if (occurrence.nodeKind === 'evt') return 'em.evt';
   if (occurrence.nodeKind === 'viewModel') return 'em.viewModel';
@@ -109,11 +113,24 @@ function toOccurrenceNodeType(occurrence: Occurrence): string {
 
 function getDomainNodeLabel(node: DomainNode | undefined, canonicalNodeId: string): string {
   const fixtureName = (node as unknown as { name?: string } | undefined)?.name;
-  return node?.displayName ?? fixtureName ?? canonicalNodeId;
+  return node?.displayName ?? fixtureName ?? fallbackCanonicalLabel(canonicalNodeId);
 }
 
 function normalizeLockLevel(lockLevel: string): string {
   return lockLevel === 'free' ? 'none' : lockLevel;
+}
+
+function fallbackCanonicalLabel(canonicalNodeId: string): string {
+  if (canonicalNodeId.startsWith('role.')) {
+    return titleize(canonicalNodeId.slice('role.'.length));
+  }
+  return canonicalNodeId;
+}
+
+function titleize(value: string): string {
+  const words = value.split(/[._-]+/).filter(Boolean);
+  if (words.length === 0) return value;
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
 function toFrontierHandleNodes(snapshot: VisualizationSnapshot): Node<FrontierHandleData>[] {

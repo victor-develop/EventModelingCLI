@@ -91,6 +91,29 @@ describe('xyflow components', () => {
     expect(screen.getByText('proc')).not.toHaveClass('lane-role');
   });
 
+  test('renders role marker with a role badge and label', () => {
+    render(
+      <ReactFlowProvider>
+        <SharedNode
+          {...({
+            id: 'occ-role-buyer',
+            type: 'em.role',
+            selected: false,
+            data: {
+              canonicalNodeId: 'role.buyer',
+              label: 'Buyer',
+              visibleLane: 'role:role.buyer',
+              lockLevel: 'none',
+            },
+          } as unknown as NodeProps<Node<ReactFlowNodeData>>)}
+        />
+      </ReactFlowProvider>,
+    );
+
+    expect(screen.getByText('role')).toHaveClass('kind-role');
+    expect(screen.getByText('Buyer')).toHaveClass('em-role-marker-label');
+  });
+
   test('renders an orthogonal edge with BaseEdge smooth-step path', () => {
     const { container } = render(
       <svg>

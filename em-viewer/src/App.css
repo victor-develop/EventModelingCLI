@@ -376,6 +376,31 @@ button {
   border-style: dashed;
 }
 
+.em-role-marker {
+  min-height: 56px;
+  border-color: rgba(86, 96, 150, 0.36);
+  background: #ffffff;
+}
+
+.em-role-marker-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  color: #3f4775;
+}
+
+.em-role-marker-label {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .em-node-topline {
   display: flex;
   align-items: center;
@@ -458,6 +483,10 @@ button {
 
 .em-edge-path.edge-shared-cmd {
   stroke: var(--ochre);
+}
+
+.em-edge-path.edge-role-shared {
+  stroke: #566096;
 }
 
 .em-edge-path.edge-cmd-evt {

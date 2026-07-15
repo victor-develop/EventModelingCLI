@@ -30,8 +30,10 @@ export interface Node {
   tags: string[];
   domains: string[];
   owner?: string;
+  ownerRole?: string;
   role?: string;
   parentCanonicalId?: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface Edge {

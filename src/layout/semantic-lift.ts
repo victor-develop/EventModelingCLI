@@ -27,6 +27,25 @@ export function semanticLift(edgeType: EdgeType, originalEdgeId: string, display
   };
 }
 
+export function semanticLiftOverride(args: {
+  kind: DisplayEdgeKind;
+  fromNodeKind: DisplayNodeKind;
+  toNodeKind: DisplayNodeKind;
+  originalEdgeType: string;
+  originalEdgeId: string;
+  displayEdgeId?: string;
+}): DisplayEdge {
+  deCounter++;
+  return {
+    displayEdgeId: args.displayEdgeId ?? `de_${deCounter}`,
+    fromNodeKind: args.fromNodeKind,
+    toNodeKind: args.toNodeKind,
+    kind: args.kind,
+    originalEdgeType: args.originalEdgeType as EdgeType,
+    originalEdgeId: args.originalEdgeId,
+  };
+}
+
 export function resetDeCounter(): void {
   deCounter = 0;
 }

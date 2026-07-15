@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import type { Server } from 'node:http';
 import { Workspace } from '../workspace/workspace';
 import { buildGraph, walkGraph, findRoots } from '../graph/graph-builder';
 import type { Node, Edge } from '../domain/types';
@@ -8,6 +9,9 @@ import type { WalkBranch } from '../graph/graph-builder';
 import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
 import type { SnapshotDirection } from '../viewer-contract';
 import { resolveNodeLaneMap } from '../viewer-contract/laneAssignment';
+
+const activeServers: Server[] = [];
+const activeKeepAlives: Array<ReturnType<typeof setInterval>> = [];
 
 export function createServerApp(ws: Workspace): {
   app: express.Express;
@@ -203,7 +207,7 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
 
   const PORT = opts.port || parseInt(process.env.PORT || '5198');
   return new Promise<void>((resolve) => {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`em serve — http://localhost:${PORT}`);
       if (manifest) {
         console.log(`  Project: ${manifest.name} (${manifest.id})`);
@@ -215,5 +219,7 @@ export function startServer(ws: Workspace, opts: { port?: number } = {}) {
       console.log(`  GET /api/walk?from=<nodeId>&direction=forward|backward&hops=3`);
       resolve();
     });
+    activeServers.push(server);
+    activeKeepAlives.push(setInterval(() => undefined, 60 * 60 * 1000));
   });
 }

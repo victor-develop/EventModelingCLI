@@ -18,6 +18,7 @@ import {
   collectDomainEdges,
   collectDomainNodes,
 } from './envelope';
+import { resolveNodeLaneMap } from './laneAssignment';
 import type { SnapshotDirection, VisualizationSnapshot } from './types';
 import { VisualizationSnapshotError } from './types';
 
@@ -41,6 +42,7 @@ export function buildVisualizationSnapshot(args: {
   const allDomainNodes = Object.fromEntries(nodes.map((node) => [node.canonicalId, node]));
   const domainGraph = buildGraph(nodes, edges);
   const graph = buildGraph(nodes, toEventModelingEdges(edges));
+  const nodeLaneMap = resolveNodeLaneMap(domainGraph);
   const resolvedFocus = resolveNodeId(domainGraph, args.focus);
   if (!resolvedFocus) {
     throw new VisualizationSnapshotError(
@@ -58,6 +60,7 @@ export function buildVisualizationSnapshot(args: {
     focusNodeId: resolvedFocus,
     direction,
     hops,
+    laneMap: nodeLaneMap,
   });
 
   if (envelope.branches.length === 0) {

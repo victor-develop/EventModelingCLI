@@ -6,17 +6,25 @@ import { NodeKind, EdgeType } from '../domain/types';
 
 export type DisplayLane = string;
 
-export type DisplayNodeKind = 'shared' | 'cmd' | 'evt' | 'viewModel';
+export type DisplayNodeKind = 'role' | 'shared' | 'cmd' | 'evt' | 'viewModel';
 
 export type DisplayEdgeKind =
+  | 'role-to-shared'
   | 'shared-to-cmd'
   | 'cmd-to-evt'
   | 'evt-to-viewModel'
   | 'viewModel-to-shared'
   | 'evt-to-shared';
 
-export function toDisplayLane(kind: DisplayNodeKind): DisplayLane {
+export function toRoleDisplayLane(roleNodeId: string): DisplayLane {
+  return `role:${roleNodeId}`;
+}
+
+export function toDisplayLane(kind: DisplayNodeKind, canonicalNodeId?: string): DisplayLane {
   switch (kind) {
+    case 'role':
+      if (!canonicalNodeId) throw new Error('Role display lane requires a canonical node id');
+      return toRoleDisplayLane(canonicalNodeId);
     case 'shared': return 'nonRole';
     case 'cmd': return 'commandViewModel';
     case 'viewModel': return 'commandViewModel';
@@ -25,6 +33,7 @@ export function toDisplayLane(kind: DisplayNodeKind): DisplayLane {
 }
 
 export function toDisplayNodeKind(nodeKind: string): DisplayNodeKind {
+  if (nodeKind === 'role') return 'role';
   if (nodeKind.startsWith('ui.')) return 'shared';
   if (nodeKind === 'trigger') return 'shared';
   if (nodeKind === 'proc') return 'shared';
@@ -51,6 +60,8 @@ export interface PathEdge {
   edgeId: string;
   edgeType: EdgeType;
   displayDirection: 'forward' | 'backward';
+  roleNodeId?: string;
+  surfaceNodeId?: string;
 }
 
 export type PathStep = PathNode | PathEdge;
@@ -94,7 +105,7 @@ export interface DisplayEdge {
 
 export type LockLevel = 'hard' | 'soft' | 'free' | 'none';
 
-export type DisplayRole = 'command' | 'event' | 'projection' | 'trigger' | 'ui' | 'processor';
+export type DisplayRole = 'role' | 'command' | 'event' | 'projection' | 'trigger' | 'ui' | 'processor';
 
 export interface Occurrence {
   occurrenceId: string;

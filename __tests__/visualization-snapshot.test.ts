@@ -147,7 +147,7 @@ describe('buildVisualizationSnapshot', () => {
     }
   });
 
-  test('exposes role-owned shared surfaces as separate renderer-agnostic lanes', () => {
+  test('renders duplicate role markers while keeping via surfaces shared by default', () => {
     const { workspace, cleanup } = createOrderWorkspace();
     try {
       const projectId = workspace.getManifest()!.id;
@@ -169,13 +169,25 @@ describe('buildVisualizationSnapshot', () => {
         .filter((occ) => occ.canonicalNodeId === 'ui.screen.return-portal')
         .map((occ) => occ.lane)
         .sort();
+      const roleMarkerLanes = snapshot.occurrences
+        .filter((occ) => occ.displayRole === 'role')
+        .map((occ) => occ.lane)
+        .sort();
       const laneLabels = new Map(snapshot.laneDescriptors.map((descriptor) => [descriptor.id, descriptor.label]));
 
-      expect(portalLanes).toEqual(['role:role.buyer', 'role:role.merchant']);
+      expect(portalLanes).toEqual(['shared']);
+      expect(roleMarkerLanes).toEqual(['role:role.buyer', 'role:role.merchant']);
       expect(snapshot.swimlaneRects.map((rect) => rect.lane)).toEqual([
         'role:role.buyer',
         'role:role.merchant',
+        'shared',
         'commandViewModel',
+      ]);
+      expect(snapshot.renderedEdges.map((item) => item.kind).sort()).toEqual([
+        'role-to-shared',
+        'role-to-shared',
+        'shared-to-cmd',
+        'shared-to-cmd',
       ]);
       expect(laneLabels.get('role:role.buyer')).toBe('Buyer');
       expect(laneLabels.get('role:role.merchant')).toBe('Merchant');
@@ -185,6 +197,7 @@ describe('buildVisualizationSnapshot', () => {
       });
       expect(renderLayoutAscii(snapshot)).toContain('LANE Buyer');
       expect(renderLayoutAscii(snapshot)).toContain('LANE Merchant');
+      expect(renderLayoutAscii(snapshot)).toContain('role.buyer --role-to-shared--> ui.screen.return-portal');
       expect(renderLayoutTable(snapshot)).toContain('role:role.buyer');
       expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
     } finally {
@@ -192,7 +205,7 @@ describe('buildVisualizationSnapshot', () => {
     }
   });
 
-  test('assigns role lanes per path occurrence when a shared surface is revisited', () => {
+  test('keeps role issue metadata on path edges without mutating surface lanes', () => {
     const projectId = 'returns';
     const nodes = [
       node(projectId, 'role.buyer', 'role', 'Buyer'),
@@ -235,8 +248,88 @@ describe('buildVisualizationSnapshot', () => {
     const portalLanes = envelope.branches[0]!.path
       .filter((step) => step.type === 'node' && step.nodeId === 'ui.screen.return-portal')
       .map((step) => step.type === 'node' ? step.lane : undefined);
+    const roleEdges = envelope.branches[0]!.path
+      .filter((step) => step.type === 'edge' && step.edgeType === 'roleIssuesCommand')
+      .map((step) => step.type === 'edge' ? {
+        roleNodeId: step.roleNodeId,
+        surfaceNodeId: step.surfaceNodeId,
+      } : undefined);
 
-    expect(portalLanes).toEqual(['role:role.buyer', 'role:role.merchant']);
+    expect(portalLanes).toEqual([undefined, undefined]);
+    expect(roleEdges).toEqual([
+      { roleNodeId: 'role.buyer', surfaceNodeId: 'ui.screen.return-portal' },
+      { roleNodeId: 'role.merchant', surfaceNodeId: 'ui.screen.return-portal' },
+    ]);
+  });
+
+  test('normalizes role-focused issue paths through the via surface', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'role.buyer', 'role', 'Buyer'));
+      workspace.saveNode(node(projectId, 'ui.screen.return-portal', 'ui.screen', 'Return Portal'));
+      workspace.saveNode(node(projectId, 'returns.cmd.request-return', 'cmd', 'Request Return'));
+      workspace.saveEdge(edge(projectId, 'edge-buyer-request', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.request-return', 'ui.screen.return-portal'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'role.buyer',
+        direction: 'forward',
+        hops: 1,
+      });
+      const occurrences = new Map(snapshot.occurrences.map((occ) => [occ.occurrenceId, occ]));
+      const roleOccurrences = snapshot.occurrences.filter((occ) => occ.canonicalNodeId === 'role.buyer');
+      const surfaceOccurrence = snapshot.occurrences.find((occ) => occ.canonicalNodeId === 'ui.screen.return-portal');
+      const commandOccurrence = snapshot.occurrences.find((occ) => occ.canonicalNodeId === 'returns.cmd.request-return');
+      const roleToShared = snapshot.renderedEdges.find((item) => item.kind === 'role-to-shared');
+      const sharedToCommand = snapshot.renderedEdges.find((item) => item.kind === 'shared-to-cmd');
+
+      expect(roleOccurrences).toHaveLength(1);
+      expect(surfaceOccurrence?.lane).toBe('shared');
+      expect(commandOccurrence?.lane).toBe('commandViewModel');
+      expect(occurrences.get(roleToShared?.fromOccurrenceId ?? '')?.canonicalNodeId).toBe('role.buyer');
+      expect(occurrences.get(roleToShared?.toOccurrenceId ?? '')?.canonicalNodeId).toBe('ui.screen.return-portal');
+      expect(occurrences.get(sharedToCommand?.fromOccurrenceId ?? '')?.canonicalNodeId).toBe('ui.screen.return-portal');
+      expect(occurrences.get(sharedToCommand?.toOccurrenceId ?? '')?.canonicalNodeId).toBe('returns.cmd.request-return');
+      expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('places an explicitly ownerRole surface into the owner role lane', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode({
+        ...node(projectId, 'role.merchant', 'role', 'Merchant'),
+        id: 'merchant',
+      });
+      workspace.saveNode({
+        ...node(projectId, 'ui.screen.merchant-console', 'ui.screen', 'Merchant Console'),
+        meta: { ownerRole: 'merchant' },
+      });
+      workspace.saveNode(node(projectId, 'returns.cmd.approve-return', 'cmd', 'Approve Return'));
+      workspace.saveEdge(edge(projectId, 'edge-merchant-approve', 'roleIssuesCommand', 'role.merchant', 'returns.cmd.approve-return', 'ui.screen.merchant-console'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'ui.screen.merchant-console',
+        direction: 'forward',
+        hops: 1,
+      });
+      const consoleOccurrences = snapshot.occurrences
+        .filter((occ) => occ.canonicalNodeId === 'ui.screen.merchant-console');
+
+      expect(consoleOccurrences).toHaveLength(1);
+      expect(consoleOccurrences[0]?.lane).toBe('role:role.merchant');
+      expect(snapshot.swimlaneRects.map((rect) => rect.lane)).toEqual([
+        'role:role.merchant',
+        'commandViewModel',
+      ]);
+    } finally {
+      cleanup();
+    }
   });
 });
 

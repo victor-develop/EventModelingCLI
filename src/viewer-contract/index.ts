@@ -19,8 +19,6 @@ export {
 } from './lanePolicy';
 export {
   resolveNodeLaneMap,
-  roleSurfaceLaneForEdge,
-  roleSurfaceLaneMapForBranch,
 } from './laneAssignment';
 export {
   computeVisibleSwimlaneRects,

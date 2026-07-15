@@ -63,8 +63,7 @@ function main() {
 
     const ws = new Workspace(process.cwd());
     startServer(ws, { port });
-    // startServer returns Promise<void> — intentionally not awaited.
-    // app.listen() keeps the Node process alive via the open TCP socket.
+    // startServer installs the long-lived HTTP server handle.
     return;
   }
 

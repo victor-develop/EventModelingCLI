@@ -12,6 +12,7 @@ export const NODE_COLORS: Record<string, string> = {
 };
 
 export const EDGE_COLORS: Record<string, string> = {
+  'role-to-shared': '#566096',
   'shared-to-cmd': '#8c6f3d',
   'cmd-to-evt': '#2f6f73',
   'evt-to-viewModel': '#b86b4b',

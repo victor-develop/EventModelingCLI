@@ -19,10 +19,12 @@ import {
 } from '@xyflow/react';
 import { Lock, RotateCcw, Unlock } from 'lucide-react';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
+import { NODE_COLORS } from '../../types';
 import { toReactFlowEdges, toReactFlowNodes } from '../adapter';
 import { edgeTypes } from '../adapter/edgeTypes';
 import { nodeTypes } from '../adapter/nodeTypes';
 import { guardNodeChanges } from '../interaction/nodeChangeGuard';
+import { nodeVisualKindFromType } from './nodeVisualKind';
 
 interface XyflowCanvasProps {
   snapshot: VisualizationSnapshot;
@@ -172,10 +174,7 @@ function XyflowCanvasInner({
 
   const minimapNodeColor = useCallback((node: Node) => {
     if (node.id.startsWith('lane:')) return '#e7e2d4';
-    const lane = (node.data as { visibleLane?: string } | undefined)?.visibleLane;
-    if (lane === 'event') return '#b86b4b';
-    if (lane === 'commandViewModel') return '#2f6f73';
-    return '#8c6f3d';
+    return NODE_COLORS[nodeVisualKindFromType(node.type)] ?? NODE_COLORS.shared;
   }, []);
 
   return (

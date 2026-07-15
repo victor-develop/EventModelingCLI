@@ -6,6 +6,7 @@ import type { ReactFlowNodeData, SwimlaneNodeData, FrontierHandleData } from '..
 import { SwimlaneGroupNode } from './SwimlaneGroupNode';
 import { CommandNode } from './CommandNode';
 import { ViewModelNode } from './ViewModelNode';
+import { SharedNode } from './SharedNode';
 import { OrthogonalDisplayEdge } from './OrthogonalDisplayEdge';
 import { FrontierHandleNode } from './FrontierHandleNode';
 
@@ -36,6 +37,8 @@ describe('xyflow components', () => {
     );
 
     expect(screen.getByText('cmd')).toBeInTheDocument();
+    expect(screen.getByText('cmd')).toHaveClass('kind-cmd');
+    expect(screen.getByText('cmd')).not.toHaveClass('lane-commandViewModel');
     expect(screen.getByText('Submit Order')).toBeInTheDocument();
     expect(screen.getByText('cmd.submit-order')).toBeInTheDocument();
     expect(screen.getByLabelText('Locked')).toBeInTheDocument();
@@ -61,6 +64,31 @@ describe('xyflow components', () => {
     );
 
     expect(screen.getByText('view model')).toBeInTheDocument();
+    expect(screen.getByText('view model')).toHaveClass('kind-viewModel');
+    expect(screen.getByText('view model')).not.toHaveClass('lane-commandViewModel');
+  });
+
+  test('renders processor badge from node type instead of role lane', () => {
+    render(
+      <ReactFlowProvider>
+        <SharedNode
+          {...({
+            id: 'occ-proc-public-api',
+            type: 'em.proc',
+            selected: false,
+            data: {
+              canonicalNodeId: 'returns.proc.public-api',
+              label: 'Public API',
+              visibleLane: 'role:role.buyer',
+              lockLevel: 'none',
+            },
+          } as unknown as NodeProps<Node<ReactFlowNodeData>>)}
+        />
+      </ReactFlowProvider>,
+    );
+
+    expect(screen.getByText('proc')).toHaveClass('kind-proc');
+    expect(screen.getByText('proc')).not.toHaveClass('lane-role');
   });
 
   test('renders an orthogonal edge with BaseEdge smooth-step path', () => {

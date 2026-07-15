@@ -398,20 +398,27 @@ button {
   white-space: nowrap;
 }
 
-.em-node-badge.lane-shared {
+.em-node-badge.kind-shared,
+.em-node-badge.kind-ui,
+.em-node-badge.kind-trigger,
+.em-node-badge.kind-proc {
   background: var(--ochre);
 }
 
-.em-node-badge.lane-role {
+.em-node-badge.kind-role {
   background: #566096;
 }
 
-.em-node-badge.lane-commandViewModel {
+.em-node-badge.kind-cmd {
   background: var(--teal);
 }
 
-.em-node-badge.lane-event {
+.em-node-badge.kind-evt {
   background: var(--rust);
+}
+
+.em-node-badge.kind-viewModel {
+  background: var(--violet);
 }
 
 .em-node-title {

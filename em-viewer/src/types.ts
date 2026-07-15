@@ -4,6 +4,10 @@ export const NODE_COLORS: Record<string, string> = {
   cmd: '#2f6f73',
   evt: '#b86b4b',
   viewModel: '#705c8f',
+  ui: '#8c6f3d',
+  trigger: '#8c6f3d',
+  proc: '#8c6f3d',
+  role: '#566096',
   shared: '#8c6f3d',
 };
 

@@ -106,10 +106,11 @@ function descriptorForLane(
   if (lane.startsWith('role:')) {
     const sourceNodeId = lane.slice('role:'.length);
     const roleNode = domainNodes?.[sourceNodeId];
+    const displayName = roleNode?.displayName;
     return {
       id: lane,
       kind: 'role',
-      label: roleNode?.displayName ?? sourceNodeId,
+      label: displayName && displayName !== sourceNodeId ? displayName : formatRoleLaneLabel(sourceNodeId),
       sourceNodeId,
     };
   }
@@ -122,5 +123,14 @@ function descriptorForLane(
 }
 
 function roleLaneFallbackLabel(lane: string): string | undefined {
-  return lane.startsWith('role:') ? lane.slice('role:'.length) : undefined;
+  return lane.startsWith('role:') ? formatRoleLaneLabel(lane.slice('role:'.length)) : undefined;
+}
+
+function formatRoleLaneLabel(sourceNodeId: string): string {
+  const labelSource = sourceNodeId.startsWith('role.')
+    ? sourceNodeId.slice('role.'.length)
+    : sourceNodeId;
+  const words = labelSource.split(/[._-]+/).filter(Boolean);
+  if (words.length === 0) return sourceNodeId;
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }

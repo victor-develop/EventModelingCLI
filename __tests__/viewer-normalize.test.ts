@@ -1,4 +1,5 @@
 import { computeVisibleSwimlaneRects, normalizeLayoutPatchForViewer } from '../src/viewer-contract/normalize';
+import { createLaneDescriptors } from '../src/viewer-contract/lanePolicy';
 import type { LayoutPatch, LayoutState, Occurrence } from '../src/layout/types';
 
 function occurrence(overrides: Partial<Occurrence>): Occurrence {
@@ -151,6 +152,17 @@ describe('viewer normalization', () => {
     expect(normalized.updatedSwimlaneRects.map((rect) => rect.lane)).toEqual([
       'role:role.buyer',
       'role:role.merchant',
+    ]);
+  });
+
+  test('formats role lane labels when role nodes are absent', () => {
+    const descriptors = createLaneDescriptors({
+      lanes: ['role:role.buyer', 'role:merchant-admin'],
+    });
+
+    expect(descriptors.map((descriptor) => descriptor.label)).toEqual([
+      'Merchant Admin',
+      'Buyer',
     ]);
   });
 });

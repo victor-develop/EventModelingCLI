@@ -35,7 +35,7 @@ describe('occurrence builder', () => {
         direction: 'backward',
         path: [
           { type: 'node', nodeId: 'ui.screen.refund', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'e0', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' },
+          { type: 'edge', edgeId: 'e0', edgeType: 'roleIssuesCommand', displayDirection: 'forward' },
           { type: 'node', nodeId: 'cmd.create-refund', nodeKind: 'cmd' },
         ],
       }],

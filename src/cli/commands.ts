@@ -540,29 +540,43 @@ export function uiBindView(ws: Workspace, uiId: string, viewModelId: string, fie
   }, { projectId: manifest.id, draftId: ctx?.draft?.id });
 }
 
-export function uiExposeCmd(ws: Workspace, roleId: string, uiId: string, cmdId: string): CLIResult {
+function createRoleIssuesCommand(
+  ws: Workspace,
+  roleId: string,
+  viaId: string,
+  cmdId: string,
+  commandName: string,
+): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
   const manifest = ws.getManifest()!;
   const role = ws.getNode(roleId);
-  const ui = ws.getNode(uiId);
+  const via = ws.getNode(viaId);
   const cmd = ws.getNode(cmdId);
-  if (!cmd) return errResult('em ui expose-cmd', 'NOT_FOUND', `Command "${cmdId}" not found`);
+  if (!cmd) return errResult(commandName, 'NOT_FOUND', `Command "${cmdId}" not found`);
+  if (!via) return errResult(commandName, 'NOT_FOUND', `Via node "${viaId}" not found`);
+  if (!via.kind.startsWith('ui.') && via.kind !== 'proc') {
+    return errResult(commandName, 'INVALID_VIA_NODE', `Via node "${viaId}" must be a UI node or processor`);
+  }
   const edgeId = ws.generateEdgeId();
   const edge = {
     id: edgeId,
     projectId: manifest.id,
-    type: 'roleUsesUIToIssueCommand' as const,
+    type: 'roleIssuesCommand' as const,
     fromNodeId: role?.canonicalId ?? roleId,
     toNodeId: cmd.canonicalId,
-    viaNodeId: ui?.canonicalId ?? uiId,
+    viaNodeId: via.canonicalId,
   };
   ws.saveEdge(edge);
   addDraftOp(ws, 'add', 'edge', edgeId);
   const ctx = ws.getContext();
-  return okResult('em ui expose-cmd', {
+  return okResult(commandName, {
     edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId, viaNodeId: edge.viaNodeId },
   }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+}
+
+export function roleIssuesCmd(ws: Workspace, roleId: string, viaId: string, cmdId: string): CLIResult {
+  return createRoleIssuesCommand(ws, roleId, viaId, cmdId, 'em role issues-cmd');
 }
 
 export function procBindView(ws: Workspace, procId: string, viewModelId: string, fields?: string[]): CLIResult {
@@ -955,7 +969,7 @@ export function storySuggestBind(ws: Workspace, storyId: string, cmdIds: string[
     if (mode === 'full') {
       const inEdges = graph.incoming.get(resolved) ?? [];
       for (const e of inEdges) {
-        if (e.type === 'roleUsesUIToIssueCommand') {
+        if (e.type === 'roleIssuesCommand') {
           interfaceNodes.add(e.fromNodeId);
           if (e.viaNodeId) interfaceNodes.add(e.viaNodeId);
         }

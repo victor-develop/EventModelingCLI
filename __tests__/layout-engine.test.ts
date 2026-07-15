@@ -132,7 +132,7 @@ describe('LayoutEngine', () => {
         dir: 'backward',
         path: [
           { type: 'node', nodeId: 'ui.screen.refund', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'e0', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e0', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'cmd.create-refund', nodeKind: 'cmd' },
         ],
       },
@@ -202,7 +202,7 @@ describe('LayoutEngine', () => {
         dir: 'backward',
         path: [
           { type: 'node', nodeId: 'ui.form.booking', nodeKind: 'ui.form' },
-          { type: 'edge', edgeId: 'e0', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e0', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'hotel.cmd.BookRoom', nodeKind: 'cmd' },
         ],
       },
@@ -360,6 +360,75 @@ describe('LayoutEngine', () => {
     expect(patch.addedEdges[0].meta.originalEdgeId).toBe('consume-b');
   });
 
+  test('appendExploreResult binds the explored source occurrence instead of another repeated shared node', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('ui.screen.return-lookup', [
+      {
+        id: 'bwd_0',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.return-lookup', nodeKind: 'ui.screen', lane: 'role:role.buyer' },
+          { type: 'edge', edgeId: 'e-consumed-by-ui', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.view.order.summary', nodeKind: 'viewModel' },
+        ],
+      },
+      {
+        id: 'fwd_1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.return-lookup', nodeKind: 'ui.screen', lane: 'role:role.buyer' },
+          { type: 'edge', edgeId: 'e-lookup-order', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+
+    const uiOccurrences = Object.values(state.occurrences)
+      .filter(o => o.canonicalNodeId === 'ui.screen.return-lookup')
+      .sort((a, b) => a.stageIndex - b.stageIndex);
+    const leftUiOcc = uiOccurrences[0]!;
+    const rightUiOcc = uiOccurrences[uiOccurrences.length - 1]!;
+
+    const patch = engine.appendExploreResult(state, rightUiOcc.occurrenceId, makeEnvelope('ui.screen.return-lookup', [
+      {
+        id: 'fwd_0',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.return-lookup', nodeKind: 'ui.screen', lane: 'role:role.buyer' },
+          { type: 'edge', edgeId: 'e-lookup-order', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e-order-looked-up', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.evt.order.lookup-completed', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e-refresh-draft', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.view.return.draft', nodeKind: 'viewModel' },
+        ],
+      },
+      {
+        id: 'fwd_1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.return-lookup', nodeKind: 'ui.screen', lane: 'role:role.buyer' },
+          { type: 'edge', edgeId: 'e-lookup-order', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e-order-looked-up', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.evt.order.lookup-completed', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e-refresh-summary', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.view.order.summary', nodeKind: 'viewModel' },
+        ],
+      },
+    ]));
+
+    const addedLookupOrder = patch.addedOccurrences.find(o => o.canonicalNodeId === 'returns.cmd.lookup-order')!;
+    const roleEdgesToAddedCommand = patch.addedEdges.filter(edge =>
+      edge.meta.originalEdgeId === 'e-lookup-order' &&
+      edge.toOccurrenceId === addedLookupOrder.occurrenceId,
+    );
+
+    expect(roleEdgesToAddedCommand).toHaveLength(1);
+    expect(roleEdgesToAddedCommand[0]?.fromOccurrenceId).toBe(rightUiOcc.occurrenceId);
+    expect(roleEdgesToAddedCommand.some(edge => edge.fromOccurrenceId === leftUiOcc.occurrenceId)).toBe(false);
+  });
+
   test('prependExploreResult emits a distinct edge when same-stage compaction removes the added duplicate', () => {
     const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
     const state = engine.initLayout(makeEnvelope('cmd.submit-order', [
@@ -368,7 +437,7 @@ describe('LayoutEngine', () => {
         dir: 'backward',
         path: [
           { type: 'node', nodeId: 'ui.screen.checkout', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'issue-a', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'issue-a', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'cmd.submit-order', nodeKind: 'cmd' },
         ],
       },
@@ -382,7 +451,7 @@ describe('LayoutEngine', () => {
         dir: 'backward',
         path: [
           { type: 'node', nodeId: 'ui.screen.checkout', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'issue-b', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'issue-b', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'cmd.submit-order', nodeKind: 'cmd' },
         ],
       },
@@ -394,6 +463,60 @@ describe('LayoutEngine', () => {
     expect(patch.addedEdges[0].fromOccurrenceId).toBe(existingUi.occurrenceId);
     expect(patch.addedEdges[0].toOccurrenceId).toBe(cmdOcc.occurrenceId);
     expect(patch.addedEdges[0].meta.originalEdgeId).toBe('issue-b');
+  });
+
+  test('prependExploreResult is idempotent when backward path already exists at final stages', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('ui.screen.install', [
+      {
+        id: 'bwd_0',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.install', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'consume', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'view.install.status', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'refresh', edgeType: 'eventRefreshesViewModel', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'evt.installed', nodeKind: 'evt' },
+        ],
+      },
+      {
+        id: 'fwd_1',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.install', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'issue', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'cmd.install', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'cause', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'evt.installed', nodeKind: 'evt' },
+        ],
+      },
+    ]));
+    const occurrenceCount = Object.keys(state.occurrences).length;
+    const edgeCount = Object.keys(state.displayEdges).length;
+    const leftUiOcc = Object.values(state.occurrences)
+      .filter(o => o.canonicalNodeId === 'ui.screen.install')
+      .sort((a, b) => a.stageIndex - b.stageIndex)[0]!;
+
+    const patch = engine.prependExploreResult(state, leftUiOcc.occurrenceId, makeEnvelope('ui.screen.install', [
+      {
+        id: 'bwd_0',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.install', nodeKind: 'ui.screen' },
+          { type: 'edge', edgeId: 'consume', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'view.install.status', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'refresh', edgeType: 'eventRefreshesViewModel', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'evt.installed', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'cause', edgeType: 'commandCausesEvent', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'cmd.install', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+
+    expect(patch.addedOccurrences).toHaveLength(0);
+    expect(patch.addedEdges).toHaveLength(0);
+    expect(Object.keys(state.occurrences)).toHaveLength(occurrenceCount);
+    expect(Object.keys(state.displayEdges)).toHaveLength(edgeCount);
   });
 
   test('duplicate shared branch targets route left-to-right', () => {
@@ -437,7 +560,7 @@ describe('LayoutEngine', () => {
         dir: 'forward',
         path: [
           { type: 'node', nodeId: 'ui.checkout', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'e-ui-submit', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e-ui-submit', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'cmd.submit', nodeKind: 'cmd' },
           { type: 'edge', edgeId: 'e-submit-event', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'evt.submitted', nodeKind: 'evt' },
@@ -445,7 +568,7 @@ describe('LayoutEngine', () => {
           { type: 'node', nodeId: 'vm.detail', nodeKind: 'viewModel' },
           { type: 'edge', edgeId: 'e-detail-screen', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'ui.detail', nodeKind: 'ui.screen' },
-          { type: 'edge', edgeId: 'e-ui-ship', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e-ui-ship', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'cmd.ship', nodeKind: 'cmd' },
           { type: 'edge', edgeId: 'e-ship-event', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'evt.shipped', nodeKind: 'evt' },

@@ -1,37 +1,38 @@
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Background,
   Controls,
   MiniMap,
   ReactFlow,
+  ReactFlowProvider,
   applyEdgeChanges,
   applyNodeChanges,
+  useReactFlow,
   type Edge,
   type EdgeChange,
   type Node,
   type NodeChange,
   type NodeMouseHandler,
   type OnSelectionChangeParams,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import { Lock, RotateCcw, Unlock } from 'lucide-react';
-import type { LayoutPatch } from '@em/layout/types';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
-import { applyLayoutPatchToReactFlow, toReactFlowEdges, toReactFlowNodes } from '../adapter';
+import { toReactFlowEdges, toReactFlowNodes } from '../adapter';
 import { edgeTypes } from '../adapter/edgeTypes';
 import { nodeTypes } from '../adapter/nodeTypes';
-import type { SnapshotContext } from '../adapter/types';
 import { guardNodeChanges } from '../interaction/nodeChangeGuard';
 
 interface XyflowCanvasProps {
   snapshot: VisualizationSnapshot;
-  patch?: LayoutPatch | null;
-  snapshotContext: SnapshotContext;
   onOccurrenceLockChange?: (occurrenceId: string, lockLevel: 'hard' | 'none') => void;
   onOccurrenceReset?: (occurrenceId: string) => void;
   onExploreLeft?: () => void;
   onExploreRight?: () => void;
 }
+
+const FIT_VIEW_OPTIONS = { padding: 0.18 };
 
 type SelectionInfo =
   | { type: 'node'; id: string; title: string; subtitle: string; lockLevel: string }
@@ -39,8 +40,26 @@ type SelectionInfo =
 
 export function XyflowCanvas({
   snapshot,
-  patch,
-  snapshotContext,
+  onOccurrenceLockChange,
+  onOccurrenceReset,
+  onExploreLeft,
+  onExploreRight,
+}: XyflowCanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <XyflowCanvasInner
+        snapshot={snapshot}
+        onOccurrenceLockChange={onOccurrenceLockChange}
+        onOccurrenceReset={onOccurrenceReset}
+        onExploreLeft={onExploreLeft}
+        onExploreRight={onExploreRight}
+      />
+    </ReactFlowProvider>
+  );
+}
+
+function XyflowCanvasInner({
+  snapshot,
   onOccurrenceLockChange,
   onOccurrenceReset,
   onExploreLeft,
@@ -49,9 +68,16 @@ export function XyflowCanvas({
   const [nodes, setNodes] = useState<Node[]>(() => toReactFlowNodes(snapshot, { includeFrontierHandles: true }));
   const [edges, setEdges] = useState<Edge[]>(() => toReactFlowEdges(snapshot));
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
-  const nodesRef = useRef(nodes);
-  const edgesRef = useRef(edges);
   const baselinePositionsRef = useRef(new Map<string, { x: number; y: number }>());
+  const flowReadyRef = useRef(false);
+  const reactFlow = useReactFlow<Node, Edge>();
+
+  const fitSnapshotView = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      if (!flowReadyRef.current) return;
+      void reactFlow.fitView(FIT_VIEW_OPTIONS);
+    });
+  }, [reactFlow]);
 
   const resetBaseline = useCallback((nextNodes: Node[]) => {
     baselinePositionsRef.current = new Map(nextNodes.map((node) => [node.id, { ...node.position }]));
@@ -63,34 +89,15 @@ export function XyflowCanvas({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- React Flow controlled state must be reset when a new snapshot arrives.
     setNodes(nextNodes);
     setEdges(nextEdges);
-    nodesRef.current = nextNodes;
-    edgesRef.current = nextEdges;
     setSelection(null);
     resetBaseline(nextNodes);
-  }, [snapshot, resetBaseline]);
+    fitSnapshotView();
+  }, [snapshot, resetBaseline, fitSnapshotView]);
 
-  useEffect(() => {
-    nodesRef.current = nodes;
-  }, [nodes]);
-
-  useEffect(() => {
-    edgesRef.current = edges;
-  }, [edges]);
-
-  useEffect(() => {
-    if (!patch) return;
-    const next = applyLayoutPatchToReactFlow({
-      patch,
-      previousNodes: nodesRef.current,
-      previousEdges: edgesRef.current,
-      snapshotContext,
-    });
-    setNodes(next.nodes);
-    setEdges(next.edges);
-    nodesRef.current = next.nodes;
-    edgesRef.current = next.edges;
-    resetBaseline(next.nodes);
-  }, [patch, snapshotContext, resetBaseline]);
+  const onInit = useCallback((instance: ReactFlowInstance<Node, Edge>) => {
+    flowReadyRef.current = true;
+    void instance.fitView(FIT_VIEW_OPTIONS);
+  }, []);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((currentNodes) => {
@@ -171,8 +178,6 @@ export function XyflowCanvas({
     return '#8c6f3d';
   }, []);
 
-  const fitViewOptions = useMemo(() => ({ padding: 0.18 }), []);
-
   return (
     <main className="xyflow-shell" aria-label="Event modeling canvas">
       <ReactFlow
@@ -184,8 +189,7 @@ export function XyflowCanvas({
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
         onNodeClick={onNodeClick}
-        fitView
-        fitViewOptions={fitViewOptions}
+        onInit={onInit}
         nodesDraggable
         nodesConnectable={false}
         elementsSelectable

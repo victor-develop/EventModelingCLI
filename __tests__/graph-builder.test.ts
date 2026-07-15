@@ -50,7 +50,7 @@ describe('graph builder', () => {
       makeNode('vm.detail', 'viewModel'),
     ];
     const edges = [
-      makeEdge('e-ui-cmd', 'roleUsesUIToIssueCommand', 'ui.checkout', 'cmd.submit'),
+      makeEdge('e-ui-cmd', 'roleIssuesCommand', 'ui.checkout', 'cmd.submit'),
       makeEdge('e-cmd-evt', 'commandCausesEvent', 'cmd.submit', 'evt.submitted'),
       makeEdge('e-evt-vm', 'eventRefreshesViewModel', 'evt.submitted', 'vm.detail'),
       makeEdge('e-vm-ui', 'viewModelConsumedByUiOrProcessor', 'vm.detail', 'ui.checkout'),
@@ -155,6 +155,43 @@ describe('findRoots', () => {
     expect(kinds).not.toContain('evt');
     expect(kinds).not.toContain('viewModel');
   });
+
+  test('includes role issue via surface even when it consumes a view model', () => {
+    const nodes = [
+      makeNode('ui.screen.return-request-form', 'ui.screen'),
+      makeNode('returns.cmd.request-return', 'cmd'),
+      makeNode('returns.view.return.draft', 'viewModel'),
+    ];
+    const roleEdge: Edge = {
+      ...makeEdge('e1', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.request-return'),
+      viaNodeId: 'ui.screen.return-request-form',
+    };
+    const edges = [
+      roleEdge,
+      makeEdge('e2', 'viewModelConsumedByUiOrProcessor', 'returns.view.return.draft', 'ui.screen.return-request-form'),
+    ];
+
+    const roots = findRoots(buildGraph(nodes, edges));
+
+    expect(roots.map(r => r.canonicalId)).toContain('ui.screen.return-request-form');
+  });
+
+  test('excludes pure UI containers with no event-modeling outgoing edge', () => {
+    const nodes = [
+      makeNode('ui.app.merchant-admin', 'ui.app'),
+      makeNode('ui.screen.return-request-form', 'ui.screen'),
+      makeNode('returns.cmd.request-return', 'cmd'),
+    ];
+    const roleEdge: Edge = {
+      ...makeEdge('e1', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.request-return'),
+      viaNodeId: 'ui.screen.return-request-form',
+    };
+    const roots = findRoots(buildGraph(nodes, [roleEdge]));
+    const rootIds = roots.map(r => r.canonicalId);
+
+    expect(rootIds).not.toContain('ui.app.merchant-admin');
+    expect(rootIds).toContain('ui.screen.return-request-form');
+  });
 });
 
 describe('viaNodeId fallback', () => {
@@ -170,7 +207,7 @@ describe('viaNodeId fallback', () => {
     ];
     const edges: Edge[] = [
       makeEdge('e1', 'commandCausesEvent', 'hotel.cmd.BookRoom', 'hotel.evt.RoomBooked'),
-      makeEdgeWithVia('e2', 'roleUsesUIToIssueCommand', 'guest', 'hotel.cmd.BookRoom', 'ui.form.booking-form'),
+      makeEdgeWithVia('e2', 'roleIssuesCommand', 'guest', 'hotel.cmd.BookRoom', 'ui.form.booking-form'),
     ];
     const g = buildGraph(nodes, edges);
     const result = walkGraph(g, 'hotel.cmd.BookRoom', 'backward', undefined, 3);
@@ -187,7 +224,7 @@ describe('viaNodeId fallback', () => {
       makeNode('ui.form.booking-form', 'ui.form' as Node['kind']),
     ];
     const edges: Edge[] = [
-      makeEdgeWithVia('e1', 'roleUsesUIToIssueCommand', 'guest', 'hotel.cmd.BookRoom', 'ui.form.booking-form'),
+      makeEdgeWithVia('e1', 'roleIssuesCommand', 'guest', 'hotel.cmd.BookRoom', 'ui.form.booking-form'),
     ];
     const g = buildGraph(nodes, edges);
     const neighbors = getNeighbors(g, 'hotel.cmd.BookRoom', 'in');

@@ -237,8 +237,8 @@ console.log('\n=== Phase 7: UI ===');
 }
 
 {
-  const r = run(ws, 'em ui expose-cmd --role guest --ui ui.form.booking-form --cmd hotel.cmd.BookRoom');
-  assert(r !== null, 'ui expose-cmd succeeds');
+  const r = run(ws, 'em role issues-cmd --role guest --via ui.form.booking-form --cmd hotel.cmd.BookRoom');
+  assert(r !== null, 'role issues-cmd succeeds');
 }
 
 {

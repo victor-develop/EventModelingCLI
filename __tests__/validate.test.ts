@@ -42,6 +42,22 @@ describe('validation rules', () => {
     expect(errors.some(e => e.code === 'EMV-001')).toBe(false);
   });
 
+  test('EMV-010: story-bound canonical command with event loop passes', () => {
+    const cmdNode = { ...makeNode('node_1', 'cmd'), canonicalId: 'returns.cmd.request-return' };
+    const evtNode = { ...makeNode('node_2', 'evt'), canonicalId: 'returns.evt.return.requested' };
+    const viewNode = { ...makeNode('node_3', 'viewModel'), canonicalId: 'returns.view.return.detail' };
+    const nodes = [makeNode('story.request-return', 'story.story'), cmdNode, evtNode, viewNode];
+    const edges = [
+      makeEdge('e1', 'storyOwnsCommand', 'story.request-return', 'returns.cmd.request-return'),
+      makeEdge('e2', 'commandCausesEvent', 'returns.cmd.request-return', 'returns.evt.return.requested'),
+      makeEdge('e3', 'eventRefreshesViewModel', 'returns.evt.return.requested', 'returns.view.return.detail'),
+    ];
+
+    const errors = validate(nodes, edges, []);
+
+    expect(errors.some(e => e.code === 'EMV-010')).toBe(false);
+  });
+
   test('EMV-020: command without event', () => {
     const nodes = [makeNode('c1', 'cmd')];
     const errors = validate(nodes, [], []);
@@ -97,5 +113,20 @@ describe('validation rules', () => {
     const nodes = [makeNode('p1', 'proc')];
     const errors = validate(nodes, [], []);
     expect(errors.some(e => e.code === 'EMV-050')).toBe(true);
+  });
+
+  test('EMV-050: processor used as role issue surface does not need update source', () => {
+    const nodes = [
+      makeNode('p1', 'proc'),
+      makeNode('c1', 'cmd'),
+    ];
+    const edge: Edge = {
+      ...makeEdge('e1', 'roleIssuesCommand', 'role.buyer', 'c1'),
+      viaNodeId: 'p1',
+    };
+
+    const errors = validate(nodes, [edge], []);
+
+    expect(errors.some(e => e.code === 'EMV-050')).toBe(false);
   });
 });

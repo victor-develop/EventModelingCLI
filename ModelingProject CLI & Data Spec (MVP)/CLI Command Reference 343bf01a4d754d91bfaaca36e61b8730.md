@@ -115,7 +115,7 @@ All commands should return a consistent top-level envelope.
 
 [em ui bind-view](CLI%20Command%20Reference/em%20ui%20bind-view%20759d5a7f797143b383841c3615e94e35.md)
 
-[em ui expose-cmd](CLI%20Command%20Reference/em%20ui%20expose-cmd%20042ba0d6b646424e9c3adc4d3a367cfe.md)
+[em role issues-cmd](CLI%20Command%20Reference/em%20role%20issues-cmd.md)
 
 [em cmd new](CLI%20Command%20Reference/em%20cmd%20new%208c0b90fd910b4d049dd44bcb4c499592.md)
 

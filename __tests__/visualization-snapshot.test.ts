@@ -64,7 +64,7 @@ describe('buildVisualizationSnapshot', () => {
       const ascii = renderLayoutAscii(snapshot);
       const table = renderLayoutTable(snapshot);
 
-      expect(domainEdgeTypes).toEqual(['roleUsesUIToIssueCommand']);
+      expect(domainEdgeTypes).toEqual(['roleIssuesCommand']);
       expect(snapshot.renderedEdges.map((item) => item.kind)).not.toContain('shared-to-shared');
       expect(ascii).not.toContain('ui.checkout --shared-to-shared--> ui.checkout.summary');
       expect(table).toContain('left-to-right edges: PASS');
@@ -112,7 +112,7 @@ describe('buildVisualizationSnapshot', () => {
       const projectId = workspace.getManifest()!.id;
       workspace.saveNode(node(projectId, 'cmd.ship-order', 'cmd', 'Ship Order'));
       workspace.saveNode(node(projectId, 'evt.order-shipped', 'evt', 'Order Shipped'));
-      workspace.saveEdge(edge(projectId, 'edge-pay-to-ship', 'roleUsesUIToIssueCommand', 'ui.pay-order-action', 'cmd.ship-order'));
+      workspace.saveEdge(edge(projectId, 'edge-pay-to-ship', 'roleIssuesCommand', 'ui.pay-order-action', 'cmd.ship-order'));
       workspace.saveEdge(edge(projectId, 'edge-ship-to-shipped', 'commandCausesEvent', 'cmd.ship-order', 'evt.order-shipped'));
       workspace.saveEdge(edge(projectId, 'edge-shipped-to-detail', 'eventRefreshesViewModel', 'evt.order-shipped', 'vm.order-detail'));
 

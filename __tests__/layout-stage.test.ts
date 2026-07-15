@@ -27,7 +27,7 @@ describe('stage assignment', () => {
     ];
 
     const displayEdges: DisplayEdge[] = [
-      { displayEdgeId: 'de1', fromNodeKind: 'shared', toNodeKind: 'cmd', kind: 'shared-to-cmd', originalEdgeType: 'roleUsesUIToIssueCommand', originalEdgeId: 'e1' },
+      { displayEdgeId: 'de1', fromNodeKind: 'shared', toNodeKind: 'cmd', kind: 'shared-to-cmd', originalEdgeType: 'roleIssuesCommand', originalEdgeId: 'e1' },
       { displayEdgeId: 'de2', fromNodeKind: 'cmd', toNodeKind: 'evt', kind: 'cmd-to-evt', originalEdgeType: 'commandCausesEvent', originalEdgeId: 'e2' },
       { displayEdgeId: 'de3', fromNodeKind: 'evt', toNodeKind: 'viewModel', kind: 'evt-to-viewModel', originalEdgeType: 'eventRefreshesViewModel', originalEdgeId: 'e3' },
     ];

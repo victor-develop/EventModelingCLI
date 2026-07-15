@@ -39,7 +39,8 @@ export function validate(
   }
 
   for (const cmdId of storyBoundCmds) {
-    const resolved = graph.nodes.get(cmdId)?.id ?? cmdId;
+    const cmdNode = graph.nodes.get(cmdId);
+    const resolved = cmdNode ? [cmdNode.id, cmdNode.canonicalId] : [cmdId];
     const hasLoop = checkEndToEndLoop(graph, resolved, edges);
     if (!hasLoop) {
       errors.push({
@@ -142,6 +143,13 @@ export function validate(
 
   for (const node of nodes) {
     if (node.kind === 'proc') {
+      const isRoleIssueSurface = edges.some(
+        e =>
+          e.type === 'roleIssuesCommand' &&
+          (e.viaNodeId === node.id || e.viaNodeId === node.canonicalId),
+      );
+      if (isRoleIssueSurface) continue;
+
       const hasUpdate = edges.some(
         e =>
           e.type === 'eventUpdatesProcessor' &&
@@ -160,8 +168,9 @@ export function validate(
   return errors;
 }
 
-function checkEndToEndLoop(graph: Graph, cmdId: string, edges: Edge[]): boolean {
-  const cmdEvents = edges.filter(e => e.type === 'commandCausesEvent' && (e.fromNodeId === cmdId));
+function checkEndToEndLoop(graph: Graph, cmdIds: string[], edges: Edge[]): boolean {
+  const cmdIdSet = new Set(cmdIds);
+  const cmdEvents = edges.filter(e => e.type === 'commandCausesEvent' && cmdIdSet.has(e.fromNodeId));
   if (cmdEvents.length === 0) return false;
 
   for (const cmdEvt of cmdEvents) {

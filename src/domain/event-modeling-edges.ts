@@ -1,7 +1,7 @@
 import type { Edge, EdgeType } from './types';
 
 export const EVENT_MODELING_EDGE_TYPES: EdgeType[] = [
-  'roleUsesUIToIssueCommand',
+  'roleIssuesCommand',
   'processorOrTriggerIssuesCommand',
   'commandCausesEvent',
   'eventRefreshesViewModel',

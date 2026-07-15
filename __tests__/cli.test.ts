@@ -221,12 +221,26 @@ describe('Event Modeling CLI', () => {
       expect((r.data.edge as any).toNodeId).toBe('ui.component.detail-list');
     });
 
-    test('ui expose-cmd', () => {
+    test('role issues-cmd via UI', () => {
       em('ui', 'add', 'screen', '--name', 'Detail');
       em('cmd', 'new', 'order.cmd.test-do');
-      const r = em('ui', 'expose-cmd', '--role', 'role.customer', '--ui', 'ui.screen.detail', '--cmd', 'order.cmd.test-do');
+      const r = em('role', 'issues-cmd', '--role', 'role.customer', '--via', 'ui.screen.detail', '--cmd', 'order.cmd.test-do');
       expect(r.ok).toBe(true);
-      expect((r.data.edge as any).type).toBe('roleUsesUIToIssueCommand');
+      expect(r.command).toBe('em role issues-cmd');
+      expect((r.data.edge as any).fromNodeId).toBe('role.customer');
+      expect((r.data.edge as any).viaNodeId).toBe('ui.screen.detail');
+      expect((r.data.edge as any).type).toBe('roleIssuesCommand');
+    });
+
+    test('role issues-cmd via proc', () => {
+      em('proc', 'new', 'return.proc.public-api');
+      em('cmd', 'new', 'return.cmd.request-return');
+      const r = em('role', 'issues-cmd', '--role', 'role.buyer', '--via', 'return.proc.public-api', '--cmd', 'return.cmd.request-return');
+      expect(r.ok).toBe(true);
+      expect(r.command).toBe('em role issues-cmd');
+      expect((r.data.edge as any).fromNodeId).toBe('role.buyer');
+      expect((r.data.edge as any).viaNodeId).toBe('return.proc.public-api');
+      expect((r.data.edge as any).type).toBe('roleIssuesCommand');
     });
   });
 
@@ -500,7 +514,7 @@ describe('Event Modeling CLI', () => {
 
       em('ui', 'bind-view', '--ui', 'ui.component.tracking-detail-timeline-list', '--view', 'tracking.timeline.view.timeline.detail', '--fields', 'f.latest-status,f.tracking-id');
 
-      em('ui', 'expose-cmd', '--role', 'role.customer', '--ui', 'ui.screen.tracking-detail', '--cmd', 'tracking.refresh.cmd.refresh-tracking');
+      em('role', 'issues-cmd', '--role', 'role.customer', '--via', 'ui.screen.tracking-detail', '--cmd', 'tracking.refresh.cmd.refresh-tracking');
 
       const suggest = em('story', 'suggest-bind', '--story', 'story.refresh-tracking', '--from-cmd', 'tracking.refresh.cmd.refresh-tracking', '--mode', 'full');
       expect(suggest.ok).toBe(true);

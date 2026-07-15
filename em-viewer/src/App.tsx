@@ -11,8 +11,7 @@ import { XyflowCanvas } from './xyflow/components/XyflowCanvas';
 function App() {
   const { data, rootsData, loading, switching, error, refocus } = useGraphData();
   const {
-    patch,
-    domainNodes,
+    snapshot: walkSnapshot,
     walkLeft,
     walkRight,
     setOccurrenceLock,
@@ -23,22 +22,18 @@ function App() {
     isWalking,
   } = useWalkState(data);
   const [navCollapsed, setNavCollapsed] = useState(false);
+  const visibleSnapshot = walkSnapshot ?? data;
 
-  const activeRootId = useMemo(() => data?.focusNodeId ?? null, [data]);
+  const activeRootId = useMemo(() => visibleSnapshot?.focusNodeId ?? null, [visibleSnapshot]);
   const activeRootName = useMemo(() => {
     if (!activeRootId) return null;
     const root = rootsData?.roots.find(r => r.canonicalId === activeRootId);
-    return root?.displayName ?? data?.domainNodes[activeRootId]?.displayName ?? activeRootId;
-  }, [data?.domainNodes, rootsData, activeRootId]);
+    return root?.displayName ?? visibleSnapshot?.domainNodes[activeRootId]?.displayName ?? activeRootId;
+  }, [visibleSnapshot?.domainNodes, rootsData, activeRootId]);
 
   const projectName = useMemo(() => {
-    return data?.projectName ?? rootsData?.projectName ?? 'Event Modeling';
-  }, [data, rootsData]);
-
-  const snapshotContext = useMemo(() => ({
-    domainNodes,
-    laneMap: data?.laneMap ?? {},
-  }), [domainNodes, data?.laneMap]);
+    return visibleSnapshot?.projectName ?? rootsData?.projectName ?? 'Event Modeling';
+  }, [visibleSnapshot, rootsData]);
 
   const handleWalkLeft = useCallback(() => {
     walkLeft();
@@ -69,7 +64,7 @@ function App() {
     );
   }
 
-  if (!data) {
+  if (!visibleSnapshot) {
     return (
       <div className="app-state">
         Initializing layout…
@@ -98,9 +93,7 @@ function App() {
         isWalking={switching || isWalking}
       />
       <XyflowCanvas
-        snapshot={data}
-        patch={patch}
-        snapshotContext={snapshotContext}
+        snapshot={visibleSnapshot}
         onOccurrenceLockChange={setOccurrenceLock}
         onOccurrenceReset={resetOccurrencePosition}
         onExploreLeft={handleWalkLeft}

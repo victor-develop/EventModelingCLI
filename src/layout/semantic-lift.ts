@@ -4,7 +4,7 @@ import { DisplayEdge, DisplayEdgeKind, DisplayNodeKind } from './types';
 let deCounter = 0;
 
 const EDGE_LIFT_MAP: Partial<Record<EdgeType, { kind: DisplayEdgeKind; from: DisplayNodeKind; to: DisplayNodeKind }>> = {
-  roleUsesUIToIssueCommand: { kind: 'shared-to-cmd', from: 'shared', to: 'cmd' },
+  roleIssuesCommand: { kind: 'shared-to-cmd', from: 'shared', to: 'cmd' },
   processorOrTriggerIssuesCommand: { kind: 'shared-to-cmd', from: 'shared', to: 'cmd' },
   commandCausesEvent: { kind: 'cmd-to-evt', from: 'cmd', to: 'evt' },
   eventRefreshesViewModel: { kind: 'evt-to-viewModel', from: 'evt', to: 'viewModel' },

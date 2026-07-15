@@ -18,7 +18,7 @@ export function createOrderWorkspace(): { workspace: Workspace; cleanup: () => v
   ];
 
   const edges: Edge[] = [
-    edge(manifest.id, 'edge-ui-to-cmd', 'roleUsesUIToIssueCommand', 'ui.checkout', 'cmd.submit-order'),
+    edge(manifest.id, 'edge-ui-to-cmd', 'roleIssuesCommand', 'ui.checkout', 'cmd.submit-order'),
     edge(manifest.id, 'edge-cmd-to-evt', 'commandCausesEvent', 'cmd.submit-order', 'evt.order-submitted'),
     edge(manifest.id, 'edge-evt-to-vm', 'eventRefreshesViewModel', 'evt.order-submitted', 'vm.order-detail'),
     edge(manifest.id, 'edge-vm-to-pay', 'viewModelConsumedByUiOrProcessor', 'vm.order-detail', 'ui.pay-order-action'),

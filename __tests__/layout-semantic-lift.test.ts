@@ -3,7 +3,7 @@ import { DisplayEdge, DisplayEdgeKind } from '../src/layout/types';
 
 describe('semantic-lift', () => {
   const cases: Array<{ edgeType: string; expectedKind: DisplayEdgeKind; expectedFrom: string; expectedTo: string }> = [
-    { edgeType: 'roleUsesUIToIssueCommand', expectedKind: 'shared-to-cmd', expectedFrom: 'shared', expectedTo: 'cmd' },
+    { edgeType: 'roleIssuesCommand', expectedKind: 'shared-to-cmd', expectedFrom: 'shared', expectedTo: 'cmd' },
     { edgeType: 'processorOrTriggerIssuesCommand', expectedKind: 'shared-to-cmd', expectedFrom: 'shared', expectedTo: 'cmd' },
     { edgeType: 'commandCausesEvent', expectedKind: 'cmd-to-evt', expectedFrom: 'cmd', expectedTo: 'evt' },
     { edgeType: 'eventRefreshesViewModel', expectedKind: 'evt-to-viewModel', expectedFrom: 'evt', expectedTo: 'viewModel' },
@@ -29,7 +29,7 @@ describe('semantic-lift', () => {
   });
 
   test('display edge from shared lane goes to cmd lane', () => {
-    const r = semanticLift('roleUsesUIToIssueCommand' as any, 'e1');
+    const r = semanticLift('roleIssuesCommand' as any, 'e1');
     expect(r.kind).toBe('shared-to-cmd');
   });
 

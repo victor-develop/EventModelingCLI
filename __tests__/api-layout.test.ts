@@ -72,7 +72,7 @@ describe('/api/layout', () => {
       const body = await getJson(server, '/api/walk?from=ui.checkout&direction=forward&hops=1');
 
       expect(body.status).toBe(200);
-      expect(Object.values(body.json.edges).map((item: any) => item.type)).toEqual(['roleUsesUIToIssueCommand']);
+      expect(Object.values(body.json.edges).map((item: any) => item.type)).toEqual(['roleIssuesCommand']);
       expect(Object.keys(body.json.nodes)).not.toContain('ui.checkout.summary');
     } finally {
       cleanup();

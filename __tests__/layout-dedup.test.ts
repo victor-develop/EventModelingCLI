@@ -102,7 +102,7 @@ describe('canonical dedup', () => {
         dir: 'backward',
         path: [
           { type: 'node', nodeId: 'ui.form.booking', nodeKind: 'ui.form' },
-          { type: 'edge', edgeId: 'e0', edgeType: 'roleUsesUIToIssueCommand', displayDirection: 'forward' as const },
+          { type: 'edge', edgeId: 'e0', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
           { type: 'node', nodeId: 'hotel.cmd.BookRoom', nodeKind: 'cmd' },
         ],
       },

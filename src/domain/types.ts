@@ -8,7 +8,7 @@ export type NodeKind =
 export const EDGE_TYPES = [
   'parentOf',
   'storyOwnsCommand',
-  'roleUsesUIToIssueCommand',
+  'roleIssuesCommand',
   'processorOrTriggerIssuesCommand',
   'commandCausesEvent',
   'eventRefreshesViewModel',

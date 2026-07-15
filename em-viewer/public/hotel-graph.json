@@ -154,7 +154,7 @@
     {
       "id": "edge_11",
       "projectId": "proj_hotel-booking",
-      "type": "roleUsesUIToIssueCommand",
+      "type": "roleIssuesCommand",
       "fromNodeId": "guest",
       "toNodeId": "hotel.cmd.BookRoom",
       "viaNodeId": "ui.form.booking-form"

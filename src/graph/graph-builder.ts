@@ -350,6 +350,7 @@ const ROOT_ELIGIBLE_KINDS: Set<string> = new Set([
 export function findRoots(graph: Graph): RootNode[] {
   const roots: RootNode[] = [];
   const seen = new Set<string>();
+  const rootIds = new Set<string>();
 
   for (const [, node] of graph.nodes) {
     if (seen.has(node.canonicalId)) continue;
@@ -358,7 +359,11 @@ export function findRoots(graph: Graph): RootNode[] {
     if (!ROOT_ELIGIBLE_KINDS.has(node.kind)) continue;
 
     const incomingEdges = graph.incoming.get(node.canonicalId) ?? [];
+    const outgoingEdges = graph.outgoing.get(node.canonicalId) ?? [];
     const hasFlowIncoming = incomingEdges.some(e => EVENT_MODELING_EDGE_TYPE_SET.has(e.type));
+    const hasFlowOutgoing = outgoingEdges.some(e => EVENT_MODELING_EDGE_TYPE_SET.has(e.type));
+
+    if (node.kind.startsWith('ui.') && !hasFlowOutgoing) continue;
 
     if (!hasFlowIncoming) {
       roots.push({
@@ -366,14 +371,14 @@ export function findRoots(graph: Graph): RootNode[] {
         kind: node.kind,
         displayName: node.displayName,
       });
+      rootIds.add(node.canonicalId);
     }
   }
 
   for (const [, edge] of graph.edges) {
-    if (edge.type === 'roleUsesUIToIssueCommand' && edge.viaNodeId) {
+    if (edge.type === 'roleIssuesCommand' && edge.viaNodeId) {
       const resolved = resolveNodeId(graph, edge.viaNodeId);
-      if (resolved && !seen.has(resolved)) {
-        seen.add(resolved);
+      if (resolved && !rootIds.has(resolved)) {
         const node = graph.nodes.get(resolved);
         if (node) {
           roots.push({
@@ -381,6 +386,7 @@ export function findRoots(graph: Graph): RootNode[] {
             kind: node.kind,
             displayName: node.displayName,
           });
+          rootIds.add(node.canonicalId);
         }
       }
     }
@@ -393,7 +399,7 @@ export function resolveLaneMap(graph: Graph): Map<string, string> {
   const laneMap = new Map<string, string>();
 
   for (const [, edge] of graph.edges) {
-    if (edge.type === 'roleUsesUIToIssueCommand' && edge.viaNodeId) {
+    if (edge.type === 'roleIssuesCommand' && edge.viaNodeId) {
       const roleName = edge.fromNodeId;
       const resolved = resolveNodeId(graph, edge.viaNodeId);
       if (resolved) {

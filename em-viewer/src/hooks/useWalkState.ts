@@ -1,15 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { LayoutEngine } from '@em/layout/layout-engine';
-import type { LayoutPatch, LayoutState } from '@em/layout/types';
-import type { WalkBranch } from '@em/graph/graph-builder';
-import type { Node, Edge } from '@em/domain/types';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
-import { walkBranchesToEnvelope } from '@em/viewer-contract/envelope';
-import { normalizeLayoutPatchForViewer } from '@em/viewer-contract/normalize';
 
 interface UseWalkStateResult {
-  patch: LayoutPatch | null;
-  domainNodes: Record<string, Node>;
+  snapshot: VisualizationSnapshot | null;
   walkLeft: () => void;
   walkRight: () => void;
   setOccurrenceLock: (occurrenceId: string, lockLevel: 'hard' | 'none') => void;
@@ -20,16 +13,8 @@ interface UseWalkStateResult {
   isWalking: boolean;
 }
 
-function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
-}
-
 export function useWalkState(initData: VisualizationSnapshot | null): UseWalkStateResult {
-  const engineRef = useRef(new LayoutEngine());
-  const layoutStateRef = useRef<LayoutState | null>(null);
-  const baselineLayoutStateRef = useRef<LayoutState | null>(null);
-  const [patch, setPatch] = useState<LayoutPatch | null>(null);
-  const [domainNodes, setDomainNodes] = useState<Record<string, Node>>({});
+  const [snapshot, setSnapshot] = useState<VisualizationSnapshot | null>(initData);
   const [walkCount, setWalkCount] = useState(0);
   const isWalkingRef = useRef(false);
   const [canWalkLeft, setCanWalkLeft] = useState(true);
@@ -37,12 +22,7 @@ export function useWalkState(initData: VisualizationSnapshot | null): UseWalkSta
   const [isWalking, setIsWalking] = useState(false);
 
   useEffect(() => {
-    if (!initData) return;
-
-    layoutStateRef.current = deepClone(initData.layoutState);
-    baselineLayoutStateRef.current = deepClone(initData.layoutState);
-    setDomainNodes(initData.domainNodes);
-    setPatch(null);
+    setSnapshot(initData);
     setWalkCount(0);
     setCanWalkLeft(true);
     setCanWalkRight(true);
@@ -50,98 +30,72 @@ export function useWalkState(initData: VisualizationSnapshot | null): UseWalkSta
   }, [initData]);
 
   const walk = useCallback(async (direction: 'forward' | 'backward') => {
-    const layoutState = layoutStateRef.current;
-    if (!layoutState || !initData || isWalkingRef.current) return;
+    if (!snapshot || isWalkingRef.current) return;
     isWalkingRef.current = true;
     setIsWalking(true);
 
     const preferHighStage = direction === 'forward';
 
     try {
-      const occs = Object.values(layoutState.occurrences);
+      const occs = snapshot.occurrences;
       if (occs.length === 0) return;
 
-      const sorted = [...occs].sort((a, b) =>
-        preferHighStage ? b.stageIndex - a.stageIndex : a.stageIndex - b.stageIndex,
-      );
+      const sorted = [...occs].sort((a, b) => (
+        preferHighStage
+          ? (b.stageIndex - a.stageIndex) || (b.x - a.x)
+          : (a.stageIndex - b.stageIndex) || (a.x - b.x)
+      ));
       const frontier = sorted[0];
       if (!frontier) return;
 
-      const resp = await fetch(
-        `/api/walk?from=${encodeURIComponent(frontier.canonicalNodeId)}&direction=${direction}&hops=3`,
-      );
+      const resp = await fetchLayout(frontier.canonicalNodeId, direction);
       if (!resp.ok) {
         if (preferHighStage) setCanWalkRight(false);
         else setCanWalkLeft(false);
         return;
       }
-      const result = await resp.json() as { branches: WalkBranch[]; nodes: Record<string, Node>; edges: Record<string, Edge>; laneMap: Record<string, string> };
-
-      if (result.branches.length === 0 || result.branches.every(b => b.path.length <= 1)) {
+      const nextSnapshot = await resp.json() as VisualizationSnapshot;
+      if (nextSnapshot.occurrences.length === 0) {
         if (preferHighStage) setCanWalkRight(false);
         else setCanWalkLeft(false);
         return;
       }
 
-      const envelope = walkBranchesToEnvelope({
-        branches: result.branches,
-        focusNodeId: frontier.canonicalNodeId,
-        laneMap: result.laneMap,
-        includeSingletonBranches: false,
-      });
-      if (envelope.branches.length === 0) {
-        if (preferHighStage) setCanWalkRight(false);
-        else setCanWalkLeft(false);
-        return;
-      }
-
-      setDomainNodes(prev => ({ ...prev, ...result.nodes }));
-      const nextPatch = direction === 'forward'
-        ? engineRef.current.appendExploreResult(layoutState, frontier.occurrenceId, envelope)
-        : engineRef.current.prependExploreResult(layoutState, frontier.occurrenceId, envelope);
-      setPatch(deepClone(normalizeLayoutPatchForViewer(nextPatch, layoutState)));
+      setSnapshot(nextSnapshot);
       setWalkCount(c => c + 1);
     } finally {
       isWalkingRef.current = false;
       setIsWalking(false);
     }
-  }, [initData]);
+  }, [snapshot]);
 
   const walkRight = useCallback(() => { walk('forward'); }, [walk]);
   const walkLeft = useCallback(() => { walk('backward'); }, [walk]);
 
   const setOccurrenceLock = useCallback((occurrenceId: string, lockLevel: 'hard' | 'none') => {
-    const layoutState = layoutStateRef.current;
-    const occurrence = layoutState?.occurrences[occurrenceId];
-    if (!layoutState || !occurrence) return;
-    occurrence.lockLevel = lockLevel;
-    if (lockLevel === 'hard') {
-      layoutState.locks[occurrenceId] = 'hard';
-    } else {
-      delete layoutState.locks[occurrenceId];
-    }
+    setSnapshot((current) => current ? updateOccurrenceLock(current, occurrenceId, lockLevel) : current);
   }, []);
 
   const resetOccurrencePosition = useCallback((occurrenceId: string) => {
-    const layoutState = layoutStateRef.current;
-    const baseline = baselineLayoutStateRef.current?.occurrences[occurrenceId];
-    const occurrence = layoutState?.occurrences[occurrenceId];
-    if (!layoutState || !baseline || !occurrence) return;
-    layoutState.occurrences[occurrenceId] = {
-      ...occurrence,
-      lane: baseline.lane,
-      stageIndex: baseline.stageIndex,
-      rowIndex: baseline.rowIndex,
-      x: baseline.x,
-      y: baseline.y,
-      width: baseline.width,
-      height: baseline.height,
-    };
-  }, []);
+    setSnapshot((current) => {
+      if (!current) return current;
+      const baseline = initData?.layoutState.occurrences[occurrenceId];
+      const occurrence = current.layoutState.occurrences[occurrenceId];
+      if (!baseline || !occurrence) return current;
+      return updateOccurrence(current, occurrenceId, {
+        lane: baseline.lane,
+        stageIndex: baseline.stageIndex,
+        rowIndex: baseline.rowIndex,
+        x: baseline.x,
+        y: baseline.y,
+        width: baseline.width,
+        height: baseline.height,
+      });
+    });
+  }, [initData]);
 
   return {
-    patch,
-    domainNodes,
+    snapshot,
     walkLeft,
     walkRight,
     setOccurrenceLock,
@@ -151,4 +105,56 @@ export function useWalkState(initData: VisualizationSnapshot | null): UseWalkSta
     walkCount,
     isWalking,
   };
+}
+
+function fetchLayout(
+  focus: string,
+  direction: 'forward' | 'backward',
+): Promise<Response> {
+  const params = new URLSearchParams({
+    focus,
+    direction,
+    hops: '3',
+  });
+  return fetch(`/api/layout?${params.toString()}`);
+}
+
+function updateOccurrenceLock(
+  snapshot: VisualizationSnapshot,
+  occurrenceId: string,
+  lockLevel: 'hard' | 'none',
+): VisualizationSnapshot {
+  return updateOccurrence(snapshot, occurrenceId, { lockLevel }, (next) => {
+    const locks = { ...next.layoutState.locks };
+    if (lockLevel === 'hard') locks[occurrenceId] = 'hard';
+    else delete locks[occurrenceId];
+    next.layoutState = { ...next.layoutState, locks };
+  });
+}
+
+function updateOccurrence(
+  snapshot: VisualizationSnapshot,
+  occurrenceId: string,
+  changes: Partial<VisualizationSnapshot['occurrences'][number]>,
+  mutate?: (snapshot: VisualizationSnapshot) => void,
+): VisualizationSnapshot {
+  const occurrence = snapshot.layoutState.occurrences[occurrenceId];
+  if (!occurrence) return snapshot;
+
+  const nextOccurrence = { ...occurrence, ...changes };
+  const next: VisualizationSnapshot = {
+    ...snapshot,
+    layoutState: {
+      ...snapshot.layoutState,
+      occurrences: {
+        ...snapshot.layoutState.occurrences,
+        [occurrenceId]: nextOccurrence,
+      },
+    },
+    occurrences: snapshot.occurrences.map((item) => (
+      item.occurrenceId === occurrenceId ? { ...item, ...changes } : item
+    )),
+  };
+  mutate?.(next);
+  return next;
 }

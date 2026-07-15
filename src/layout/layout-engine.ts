@@ -8,6 +8,7 @@ import {
   RenderedEdge,
   DisplayEdge,
   SwimlaneRect,
+  PathNode,
 } from './types';
 import { semanticLift, resetDeCounter } from './semantic-lift';
 import {
@@ -269,6 +270,89 @@ function renderedEdgeKey(link: EdgeOccurrenceLink): string {
   ].join('\u0000');
 }
 
+function finalOccurrenceMergeKey(occurrence: Occurrence): string {
+  return [
+    occurrence.canonicalNodeId,
+    occurrence.nodeKind,
+    occurrence.stageIndex,
+    occurrence.lane,
+    occurrence.displayRole,
+  ].join('\u0000');
+}
+
+function remapEdgeOccurrenceLinks(
+  edgeOccLinks: EdgeOccurrenceLink[],
+  occurrenceIdRemap: Map<string, string>,
+): EdgeOccurrenceLink[] {
+  if (occurrenceIdRemap.size === 0) return edgeOccLinks;
+
+  const result: EdgeOccurrenceLink[] = [];
+  const seen = new Set<string>();
+  for (const link of edgeOccLinks) {
+    const remapped = {
+      ...link,
+      fromOccId: occurrenceIdRemap.get(link.fromOccId) ?? link.fromOccId,
+      toOccId: occurrenceIdRemap.get(link.toOccId) ?? link.toOccId,
+    };
+    const key = renderedEdgeKey(remapped);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(remapped);
+  }
+
+  return result;
+}
+
+function mergeFinalDuplicateOccurrences(
+  occurrences: Occurrence[],
+  edgeOccLinks: EdgeOccurrenceLink[],
+  previous: Record<string, Occurrence>,
+): { occurrences: Occurrence[]; edgeOccLinks: EdgeOccurrenceLink[]; removedOccurrenceIds: string[] } {
+  const keptOccurrenceIdByKey = new Map<string, string>();
+  for (const occurrence of Object.values(previous)) {
+    keptOccurrenceIdByKey.set(finalOccurrenceMergeKey(occurrence), occurrence.occurrenceId);
+  }
+
+  const occurrenceIdRemap = new Map<string, string>();
+  const removedOccurrenceIds: string[] = [];
+  const merged: Occurrence[] = [];
+
+  for (const occurrence of occurrences) {
+    const key = finalOccurrenceMergeKey(occurrence);
+    const keptOccurrenceId = keptOccurrenceIdByKey.get(key);
+    if (keptOccurrenceId && keptOccurrenceId !== occurrence.occurrenceId) {
+      occurrenceIdRemap.set(occurrence.occurrenceId, keptOccurrenceId);
+      removedOccurrenceIds.push(occurrence.occurrenceId);
+      continue;
+    }
+
+    keptOccurrenceIdByKey.set(key, occurrence.occurrenceId);
+    merged.push(occurrence);
+  }
+
+  return {
+    occurrences: merged,
+    edgeOccLinks: remapEdgeOccurrenceLinks(edgeOccLinks, occurrenceIdRemap),
+    removedOccurrenceIds,
+  };
+}
+
+function bindExploreSourcePathOccurrences(
+  envelope: NormalizedPathEnvelope,
+  pathOccurrenceIds: Map<PathNode, string>,
+  sourceOccurrence: Occurrence | undefined,
+  revealDirection: 'left' | 'right',
+): void {
+  if (revealDirection !== 'right') return;
+  if (!sourceOccurrence) return;
+
+  for (const branch of envelope.branches) {
+    const firstNode = branch.path.find((step): step is PathNode => step.type === 'node');
+    if (!firstNode || firstNode.nodeId !== sourceOccurrence.canonicalNodeId) continue;
+    pathOccurrenceIds.set(firstNode, sourceOccurrence.occurrenceId);
+  }
+}
+
 export class LayoutEngine {
   private config: LayoutConfig;
 
@@ -377,6 +461,7 @@ export class LayoutEngine {
     const occurrenceOffset = maxOrdinalFromIds(Object.keys(state.occurrences), 'occ');
     const sourceOccurrence = state.occurrences[sourceOccurrenceId];
     const incomingOccurrenceModel = buildOccurrenceModel(envelope, occurrenceOffset, this.config);
+    bindExploreSourcePathOccurrences(envelope, incomingOccurrenceModel.pathOccurrenceIds, sourceOccurrence, revealDirection);
     const incomingOccurrences = incomingOccurrenceModel.occurrences;
     const existingOccs = Object.values(state.occurrences);
     const newOccurrences = sourceOccurrence
@@ -405,8 +490,14 @@ export class LayoutEngine {
     );
     const compacted = mergeSameStageSharedOccurrences(staged, allEdgeLinks);
     allEdgeLinks = compacted.edgeOccLinks;
-    const compactedOccurrences = compacted.occurrences;
-    const addedAfterCompaction = added.filter(a => !compacted.removedOccurrenceIds.includes(a.occurrenceId));
+    const finalMerged = mergeFinalDuplicateOccurrences(compacted.occurrences, allEdgeLinks, state.occurrences);
+    allEdgeLinks = finalMerged.edgeOccLinks;
+    const compactedOccurrences = finalMerged.occurrences;
+    const removedOccurrenceIds = new Set([
+      ...compacted.removedOccurrenceIds,
+      ...finalMerged.removedOccurrenceIds,
+    ]);
+    const addedAfterCompaction = added.filter(a => !removedOccurrenceIds.has(a.occurrenceId));
     const stagedAdded = compactedOccurrences.filter(o => addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId));
     const existingRenderedEdgeKeys = renderedEdgeKeysFromState(state.displayEdges);
 

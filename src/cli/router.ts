@@ -91,6 +91,10 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
       if (subgroup === 'issues-cmd') return cmd.triggerIssuesCmd(ws, fs(flags, 'trigger'), fs(flags, 'cmd'));
       break;
     }
+    case 'role': {
+      if (subgroup === 'issues-cmd') return cmd.roleIssuesCmd(ws, fs(flags, 'role'), fs(flags, 'via'), fs(flags, 'cmd'));
+      break;
+    }
     case 'story': {
       if (subgroup === 'add') return cmd.storyAdd(ws, positional[2] ?? '', fs(flags, 'title'), fs(flags, 'parent') || undefined, fs(flags, 'role') || undefined);
       if (subgroup === 'tree') return cmd.storyTree(ws);
@@ -104,7 +108,6 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
       if (subgroup === 'add') return cmd.uiAdd(ws, positional[2] ?? '', fs(flags, 'name'), fs(flags, 'parent') || undefined);
       if (subgroup === 'tree') return cmd.uiTree(ws);
       if (subgroup === 'bind-view') return cmd.uiBindView(ws, fs(flags, 'ui'), fs(flags, 'view'), fs(flags, 'fields') ? fs(flags, 'fields').split(',') : undefined);
-      if (subgroup === 'expose-cmd') return cmd.uiExposeCmd(ws, fs(flags, 'role'), fs(flags, 'ui'), fs(flags, 'cmd'));
       break;
     }
     case 'link': {

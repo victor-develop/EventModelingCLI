@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback } from 'react';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
 import type { LayoutRequest } from './layoutRequest';
-import { walkLayoutRequest } from './layoutRequest';
+import { WALK_LAYOUT_HOPS, clampLayoutHops, walkLayoutRequest } from './layoutRequest';
 
 interface UseWalkStateResult {
   snapshot: VisualizationSnapshot | null;
@@ -17,6 +17,7 @@ interface UseWalkStateResult {
 
 interface UseWalkStateOptions {
   onNavigate?: (request: LayoutRequest) => void;
+  walkHops?: number;
 }
 
 interface DraftSnapshot {
@@ -31,6 +32,7 @@ export function useWalkState(
   const [draft, setDraft] = useState<DraftSnapshot | null>(null);
   const [walkCount, setWalkCount] = useState(0);
   const { onNavigate } = options;
+  const walkHops = clampLayoutHops(options.walkHops ?? WALK_LAYOUT_HOPS);
   const snapshot = useMemo(() => (
     draft?.base === initData ? draft.snapshot : initData
   ), [draft, initData]);
@@ -49,9 +51,9 @@ export function useWalkState(
     const frontier = sorted[0];
     if (!frontier) return;
 
-    onNavigate(walkLayoutRequest(frontier.canonicalNodeId, direction));
+    onNavigate(walkLayoutRequest(frontier.canonicalNodeId, direction, walkHops));
     setWalkCount(c => c + 1);
-  }, [onNavigate, snapshot]);
+  }, [onNavigate, snapshot, walkHops]);
 
   const walkRight = useCallback(() => { walk('forward'); }, [walk]);
   const walkLeft = useCallback(() => { walk('backward'); }, [walk]);

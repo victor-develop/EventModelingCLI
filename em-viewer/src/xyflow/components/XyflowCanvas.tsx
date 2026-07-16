@@ -34,7 +34,9 @@ interface XyflowCanvasProps {
   onExploreRight?: () => void;
 }
 
-const FIT_VIEW_OPTIONS = { padding: 0.18 };
+const FIT_VIEW_OPTIONS = { padding: 0.1 };
+const MIN_ZOOM = 0.08;
+const MAX_ZOOM = 2;
 
 type SelectionInfo =
   | { type: 'node'; id: string; title: string; subtitle: string; lockLevel: string }
@@ -192,6 +194,8 @@ function XyflowCanvasInner({
         nodesDraggable
         nodesConnectable={false}
         elementsSelectable
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={28} color="#d8d0bf" />

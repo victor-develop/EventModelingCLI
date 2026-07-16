@@ -35,13 +35,23 @@ describe('layoutRequest URL helpers', () => {
   test('writes walk params for share links while preserving unrelated params', () => {
     window.history.replaceState(null, '', '/?theme=dark');
 
-    writeLayoutRequestToLocation(walkLayoutRequest('returns.view.order-summary', 'forward'));
+    writeLayoutRequestToLocation(walkLayoutRequest('returns.view.order-summary', 'forward', 5));
 
     const params = new URLSearchParams(window.location.search);
     expect(params.get('theme')).toBe('dark');
     expect(params.get('focus')).toBe('returns.view.order-summary');
     expect(params.get('direction')).toBe('forward');
-    expect(params.get('hops')).toBe('3');
+    expect(params.get('hops')).toBe('5');
+  });
+
+  test('clamps URL hops to the supported range', () => {
+    window.history.replaceState(null, '', '/?focus=ui.screen.return-detail&direction=forward&hops=99');
+
+    expect(readLayoutRequestFromLocation('ui.screen.fallback')).toEqual({
+      focus: 'ui.screen.return-detail',
+      direction: 'forward',
+      hops: 6,
+    });
   });
 
   test('omits default direction and hops for base focus URLs', () => {

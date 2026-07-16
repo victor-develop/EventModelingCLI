@@ -170,6 +170,39 @@ button {
   cursor: not-allowed;
 }
 
+.hop-control {
+  width: 164px;
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid #d6ded9;
+  border-radius: 7px;
+  background: #fbfcfb;
+}
+
+.hop-control-value {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.hop-control input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
+.hop-control input[type="range"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .walk-status {
   display: inline-flex;
   align-items: center;
@@ -602,5 +635,10 @@ button {
 
   .overlay.walk-controls button {
     flex: 1 1 132px;
+  }
+
+  .hop-control {
+    flex: 1 1 180px;
+    width: auto;
   }
 }

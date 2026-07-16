@@ -2,6 +2,7 @@ import './App.css';
 import { useState, useCallback, useMemo } from 'react';
 import { useGraphData } from './hooks/useGraphData';
 import { useWalkState } from './hooks/useWalkState';
+import { DEFAULT_LAYOUT_HOPS, MAX_LAYOUT_HOPS, MIN_LAYOUT_HOPS, clampLayoutHops } from './hooks/layoutRequest';
 import { Header } from './components/Header';
 import { Legend } from './components/Legend';
 import { WalkControls } from './components/WalkControls';
@@ -9,7 +10,8 @@ import { FlowNavigator } from './components/FlowNavigator';
 import { XyflowCanvas } from './xyflow/components/XyflowCanvas';
 
 function App() {
-  const { data, rootsData, loading, switching, error, navigateLayout, refocus } = useGraphData();
+  const { data, rootsData, loading, switching, error, layoutRequest, navigateLayout, refocus } = useGraphData();
+  const currentHops = clampLayoutHops(layoutRequest?.hops ?? DEFAULT_LAYOUT_HOPS);
   const {
     snapshot: walkSnapshot,
     walkLeft,
@@ -20,7 +22,7 @@ function App() {
     canWalkRight,
     walkCount,
     isWalking,
-  } = useWalkState(data, { onNavigate: navigateLayout });
+  } = useWalkState(data, { onNavigate: navigateLayout, walkHops: currentHops });
   const [navCollapsed, setNavCollapsed] = useState(false);
   const visibleSnapshot = walkSnapshot ?? data;
 
@@ -47,6 +49,11 @@ function App() {
     if (canonicalId === activeRootId) return;
     refocus(canonicalId);
   }, [refocus, activeRootId]);
+
+  const handleHopsChange = useCallback((hops: number) => {
+    if (!layoutRequest) return;
+    navigateLayout({ ...layoutRequest, hops: clampLayoutHops(hops) }, 'replace');
+  }, [layoutRequest, navigateLayout]);
 
   if (loading) {
     return (
@@ -91,6 +98,10 @@ function App() {
         canWalkLeft={canWalkLeft}
         canWalkRight={canWalkRight}
         isWalking={switching || isWalking}
+        hops={currentHops}
+        minHops={MIN_LAYOUT_HOPS}
+        maxHops={MAX_LAYOUT_HOPS}
+        onHopsChange={handleHopsChange}
       />
       <XyflowCanvas
         snapshot={visibleSnapshot}

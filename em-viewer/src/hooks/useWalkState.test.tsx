@@ -77,6 +77,26 @@ describe('useWalkState stateless layout navigation', () => {
     });
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  test('walkRight uses the configured hop count', () => {
+    const initial = snapshot([
+      occurrence('occ-root', 'ui.screen.return-lookup', 'shared', 0),
+      occurrence('occ-frontier', 'returns.cmd.lookup-order', 'cmd', 1),
+    ]);
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, { onNavigate, walkHops: 5 }));
+
+    act(() => {
+      result.current.walkRight();
+    });
+
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'returns.cmd.lookup-order',
+      direction: 'forward',
+      hops: 5,
+    });
+  });
 });
 
 function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = []): VisualizationSnapshot {

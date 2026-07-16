@@ -9,6 +9,8 @@ export interface LayoutRequest {
 export const DEFAULT_LAYOUT_DIRECTION: SnapshotDirection = 'both';
 export const DEFAULT_LAYOUT_HOPS = 2;
 export const WALK_LAYOUT_HOPS = 3;
+export const MIN_LAYOUT_HOPS = 1;
+export const MAX_LAYOUT_HOPS = 6;
 
 const DIRECTIONS = new Set<SnapshotDirection>(['forward', 'backward', 'both']);
 
@@ -23,11 +25,12 @@ export function defaultLayoutRequest(focus?: string): LayoutRequest {
 export function walkLayoutRequest(
   focus: string,
   direction: Extract<SnapshotDirection, 'forward' | 'backward'>,
+  hops: number = WALK_LAYOUT_HOPS,
 ): LayoutRequest {
   return {
     focus: normalizeFocus(focus),
     direction,
-    hops: WALK_LAYOUT_HOPS,
+    hops: clampLayoutHops(hops),
   };
 }
 
@@ -86,6 +89,11 @@ function parseDirection(value: string | null): SnapshotDirection {
 
 function parseHops(value: string | null, direction: SnapshotDirection): number {
   const parsed = Number(value);
-  if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  if (Number.isInteger(parsed) && parsed > 0) return clampLayoutHops(parsed);
   return direction === DEFAULT_LAYOUT_DIRECTION ? DEFAULT_LAYOUT_HOPS : WALK_LAYOUT_HOPS;
+}
+
+export function clampLayoutHops(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_LAYOUT_HOPS;
+  return Math.min(MAX_LAYOUT_HOPS, Math.max(MIN_LAYOUT_HOPS, Math.round(value)));
 }

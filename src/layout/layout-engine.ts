@@ -373,8 +373,8 @@ function mergeDuplicateRoleMarkers(
     const key = [
       occurrence.canonicalNodeId,
       occurrence.lane,
+      occurrence.stageIndex,
       markerLink.toOccId,
-      markerLink.originalEdgeId,
     ].join('\u0000');
     const keptOccurrenceId = keptOccurrenceIdByKey.get(key);
     if (keptOccurrenceId) {
@@ -389,9 +389,38 @@ function mergeDuplicateRoleMarkers(
 
   return {
     occurrences: merged,
-    edgeOccLinks: remapEdgeOccurrenceLinks(edgeOccLinks, occurrenceIdRemap),
+    edgeOccLinks: remapRoleMarkerEdgeOccurrenceLinks(edgeOccLinks, occurrenceIdRemap),
     removedOccurrenceIds,
   };
+}
+
+function remapRoleMarkerEdgeOccurrenceLinks(
+  edgeOccLinks: EdgeOccurrenceLink[],
+  occurrenceIdRemap: Map<string, string>,
+): EdgeOccurrenceLink[] {
+  if (occurrenceIdRemap.size === 0) return edgeOccLinks;
+
+  const result: EdgeOccurrenceLink[] = [];
+  const seen = new Set<string>();
+  for (const link of edgeOccLinks) {
+    const remapped = {
+      ...link,
+      fromOccId: occurrenceIdRemap.get(link.fromOccId) ?? link.fromOccId,
+      toOccId: occurrenceIdRemap.get(link.toOccId) ?? link.toOccId,
+    };
+    const key = remapped.displayEdgeKind === 'role-to-shared'
+      ? [
+        remapped.displayEdgeKind,
+        remapped.fromOccId,
+        remapped.toOccId,
+      ].join('\u0000')
+      : renderedEdgeKey(remapped);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(remapped);
+  }
+
+  return result;
 }
 
 function bindExploreSourcePathOccurrences(

@@ -129,6 +129,13 @@ describe('Event Modeling CLI', () => {
       expect((r.data.node as any).kind).toBe('proc');
     });
 
+    test('proc new stores owner role', () => {
+      const r = em('proc', 'new', 'order.payment.proc.merchant-api', '--owner-role', 'role.merchant');
+      expect(r.ok).toBe(true);
+      expect((r.data.node as any).ownerRole).toBe('role.merchant');
+      expect(ws.getNode('order.payment.proc.merchant-api')?.ownerRole).toBe('role.merchant');
+    });
+
     test('trigger new', () => {
       const r = em('trigger', 'new', 'order.payment.trigger.webhook.stripe-event');
       expect(r.ok).toBe(true);
@@ -202,6 +209,13 @@ describe('Event Modeling CLI', () => {
       const r = em('ui', 'add', 'screen', '--name', 'Payment Detail');
       expect(r.ok).toBe(true);
       expect((r.data.node as any).kind).toBe('ui.screen');
+    });
+
+    test('ui add stores owner role', () => {
+      const r = em('ui', 'add', 'screen', '--name', 'Merchant Console', '--owner-role', 'role.merchant');
+      expect(r.ok).toBe(true);
+      expect((r.data.node as any).ownerRole).toBe('role.merchant');
+      expect(ws.getNode('ui.screen.merchant-console')?.ownerRole).toBe('role.merchant');
     });
 
     test('ui tree', () => {

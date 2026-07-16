@@ -205,6 +205,43 @@ describe('buildVisualizationSnapshot', () => {
     }
   });
 
+  test('merges same-column role markers for the same surface while preserving command fan-out', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'role.merchant', 'role', 'Merchant'));
+      workspace.saveNode(node(projectId, 'ui.screen.return-detail', 'ui.screen', 'Return Detail'));
+      workspace.saveNode(node(projectId, 'returns.cmd.approve-return', 'cmd', 'Approve Return'));
+      workspace.saveNode(node(projectId, 'returns.cmd.reject-return', 'cmd', 'Reject Return'));
+      workspace.saveEdge(edge(projectId, 'edge-merchant-approve', 'roleIssuesCommand', 'role.merchant', 'returns.cmd.approve-return', 'ui.screen.return-detail'));
+      workspace.saveEdge(edge(projectId, 'edge-merchant-reject', 'roleIssuesCommand', 'role.merchant', 'returns.cmd.reject-return', 'ui.screen.return-detail'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'ui.screen.return-detail',
+        direction: 'forward',
+        hops: 1,
+      });
+      const merchantMarkers = snapshot.occurrences
+        .filter((occ) => occ.displayRole === 'role' && occ.canonicalNodeId === 'role.merchant');
+      const roleToSharedEdges = snapshot.renderedEdges
+        .filter((item) => item.kind === 'role-to-shared');
+      const sharedToCommandEdges = snapshot.renderedEdges
+        .filter((item) => item.kind === 'shared-to-cmd');
+
+      expect(merchantMarkers).toHaveLength(1);
+      expect(roleToSharedEdges).toHaveLength(1);
+      expect(sharedToCommandEdges).toHaveLength(2);
+      expect(sharedToCommandEdges.map((item) => item.meta?.originalEdgeId).sort()).toEqual([
+        'edge-merchant-approve',
+        'edge-merchant-reject',
+      ]);
+      expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('keeps role issue metadata on path edges without mutating surface lanes', () => {
     const projectId = 'returns';
     const nodes = [

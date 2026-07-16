@@ -284,12 +284,18 @@ export function viewNew(ws: Workspace, canonicalId: string, displayName?: string
   }, { projectId: manifest.id, draftId: ctx?.draft?.id });
 }
 
-export function procNew(ws: Workspace, canonicalId: string): CLIResult {
+function resolveOwnerRole(ws: Workspace, ownerRole: string | undefined): string | undefined {
+  if (!ownerRole) return undefined;
+  return ws.getNode(ownerRole)?.canonicalId ?? ownerRole;
+}
+
+export function procNew(ws: Workspace, canonicalId: string, ownerRole?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
   const manifest = ws.getManifest()!;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em proc new', 'DUPLICATE', `Node "${canonicalId}" already exists`);
+  const resolvedOwnerRole = resolveOwnerRole(ws, ownerRole);
   const id = ws.generateNodeId();
   const node: Node = {
     id,
@@ -299,12 +305,13 @@ export function procNew(ws: Workspace, canonicalId: string): CLIResult {
     displayName: canonicalId.split('.').pop() ?? canonicalId,
     tags: [],
     domains: extractDomains(canonicalId),
+    ...(resolvedOwnerRole ? { ownerRole: resolvedOwnerRole } : {}),
   };
   ws.saveNode(node);
   addDraftOp(ws, 'add', 'node', canonicalId);
   const ctx = ws.getContext();
   return okResult('em proc new', {
-    node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId },
+    node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, ownerRole: node.ownerRole },
   }, { projectId: manifest.id, draftId: ctx?.draft?.id });
 }
 
@@ -395,13 +402,14 @@ export function storyTree(ws: Workspace): CLIResult {
   return okResult('em story tree', { tree }, { projectId: ws.getManifest()!.id });
 }
 
-export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: string): CLIResult {
+export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: string, ownerRole?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
   const manifest = ws.getManifest()!;
   const kind = `ui.${uiKind}` as Node['kind'];
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const canonicalId = `ui.${uiKind}.${slug}`;
+  const resolvedOwnerRole = resolveOwnerRole(ws, ownerRole);
   const id = ws.generateNodeId();
   const node: Node = {
     id,
@@ -411,6 +419,7 @@ export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: st
     displayName: name,
     tags: [],
     domains: [],
+    ...(resolvedOwnerRole ? { ownerRole: resolvedOwnerRole } : {}),
   };
   ws.saveNode(node);
   if (parentId) {
@@ -427,7 +436,13 @@ export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: st
   addDraftOp(ws, 'add', 'node', canonicalId);
   const ctx = ws.getContext();
   return okResult('em ui add', {
-    node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
+    node: {
+      id: node.id,
+      kind: node.kind,
+      canonicalId: node.canonicalId,
+      displayName: node.displayName,
+      ownerRole: node.ownerRole,
+    },
   }, { projectId: manifest.id, draftId: ctx?.draft?.id });
 }
 

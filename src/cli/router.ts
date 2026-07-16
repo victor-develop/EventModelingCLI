@@ -82,7 +82,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
       break;
     }
     case 'proc': {
-      if (subgroup === 'new') return cmd.procNew(ws, positional[2] ?? '');
+      if (subgroup === 'new') return cmd.procNew(ws, positional[2] ?? '', fs(flags, 'owner-role') || undefined);
       if (subgroup === 'bind-view') return cmd.procBindView(ws, fs(flags, 'proc'), fs(flags, 'view'), fs(flags, 'fields') ? fs(flags, 'fields').split(',') : undefined);
       break;
     }
@@ -105,7 +105,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
       break;
     }
     case 'ui': {
-      if (subgroup === 'add') return cmd.uiAdd(ws, positional[2] ?? '', fs(flags, 'name'), fs(flags, 'parent') || undefined);
+      if (subgroup === 'add') return cmd.uiAdd(ws, positional[2] ?? '', fs(flags, 'name'), fs(flags, 'parent') || undefined, fs(flags, 'owner-role') || undefined);
       if (subgroup === 'tree') return cmd.uiTree(ws);
       if (subgroup === 'bind-view') return cmd.uiBindView(ws, fs(flags, 'ui'), fs(flags, 'view'), fs(flags, 'fields') ? fs(flags, 'fields').split(',') : undefined);
       break;

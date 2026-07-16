@@ -42,6 +42,8 @@ function main() {
     console.log('  cmd new <id>              Create a command node');
     console.log('  evt new <id>              Create an event node');
     console.log('  view new <id>             Create a view model node');
+    console.log('  proc new <id>             Create a processor node [--owner-role <roleId>]');
+    console.log('  ui add <kind>             Add UI node [--owner-role <roleId>]');
     console.log('  link cmd->evt <a> <b>     Link command to event');
     console.log('  link evt->view <a> <b>    Link event to view model');
     console.log('  walk --from <id>          Walk the graph');

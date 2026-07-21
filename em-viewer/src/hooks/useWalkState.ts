@@ -18,6 +18,8 @@ interface UseWalkStateResult {
 interface UseWalkStateOptions {
   onNavigate?: (request: LayoutRequest) => void;
   walkHops?: number;
+  maxHops?: number;
+  includeTruncatedPaths?: boolean;
 }
 
 interface DraftSnapshot {
@@ -32,15 +34,18 @@ export function useWalkState(
   const [draft, setDraft] = useState<DraftSnapshot | null>(null);
   const [walkCount, setWalkCount] = useState(0);
   const { onNavigate } = options;
-  const walkHops = clampLayoutHops(options.walkHops ?? WALK_LAYOUT_HOPS);
+  const maxHops = options.maxHops ?? Math.max(WALK_LAYOUT_HOPS, options.walkHops ?? WALK_LAYOUT_HOPS);
+  const walkHops = clampLayoutHops(options.walkHops ?? WALK_LAYOUT_HOPS, maxHops);
+  const includeTruncatedPaths = options.includeTruncatedPaths ?? false;
   const snapshot = useMemo(() => (
     draft?.base === initData ? draft.snapshot : initData
   ), [draft, initData]);
+  const hasNavigableOccurrences = Boolean(snapshot?.occurrences.some(isNavigableOccurrence));
 
   const walk = useCallback((direction: 'forward' | 'backward') => {
     if (!snapshot || !onNavigate) return;
     const preferHighStage = direction === 'forward';
-    const occs = snapshot.occurrences;
+    const occs = snapshot.occurrences.filter(isNavigableOccurrence);
     if (occs.length === 0) return;
 
     const sorted = [...occs].sort((a, b) => (
@@ -51,9 +56,9 @@ export function useWalkState(
     const frontier = sorted[0];
     if (!frontier) return;
 
-    onNavigate(walkLayoutRequest(frontier.canonicalNodeId, direction, walkHops));
+    onNavigate(walkLayoutRequest(frontier.canonicalNodeId, direction, walkHops, includeTruncatedPaths, maxHops));
     setWalkCount(c => c + 1);
-  }, [onNavigate, snapshot, walkHops]);
+  }, [includeTruncatedPaths, maxHops, onNavigate, snapshot, walkHops]);
 
   const walkRight = useCallback(() => { walk('forward'); }, [walk]);
   const walkLeft = useCallback(() => { walk('backward'); }, [walk]);
@@ -97,11 +102,15 @@ export function useWalkState(
     walkRight,
     setOccurrenceLock,
     resetOccurrencePosition,
-    canWalkLeft: Boolean(snapshot?.occurrences.length),
-    canWalkRight: Boolean(snapshot?.occurrences.length),
+    canWalkLeft: hasNavigableOccurrences,
+    canWalkRight: hasNavigableOccurrences,
     walkCount,
     isWalking: false,
   };
+}
+
+function isNavigableOccurrence(occurrence: VisualizationSnapshot['occurrences'][number]): boolean {
+  return occurrence.displayRole !== 'role';
 }
 
 function updateOccurrenceLock(

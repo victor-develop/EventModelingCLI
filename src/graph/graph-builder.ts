@@ -1,5 +1,6 @@
 import { Node, Edge, EdgeType, NodeKind } from '../domain/types';
 import { EVENT_MODELING_EDGE_TYPE_SET } from '../domain/event-modeling-edges';
+import { createRoleNode } from '../domain/roles';
 
 export interface Graph {
   nodes: Map<string, Node>;
@@ -14,11 +15,21 @@ export function buildGraph(nodes: Node[], edges: Edge[]): Graph {
   const outgoing = new Map<string, Edge[]>();
   const incoming = new Map<string, Edge[]>();
 
-  for (const n of nodes) {
+  const addNode = (n: Node) => {
     nodeMap.set(n.id, n);
     if (n.canonicalId !== n.id) {
       nodeMap.set(n.canonicalId, n);
     }
+  };
+
+  for (const n of nodes) {
+    addNode(n);
+  }
+
+  for (const e of edges) {
+    if (e.type !== 'roleIssuesCommand') continue;
+    if (nodeMap.has(e.fromNodeId)) continue;
+    addNode(createImplicitRoleNode(e.fromNodeId, e.projectId));
   }
 
   for (const e of edges) {
@@ -61,6 +72,10 @@ export function buildGraph(nodes: Node[], edges: Edge[]): Graph {
   }
 
   return { nodes: nodeMap, edges: edgeMap, outgoing, incoming };
+}
+
+function createImplicitRoleNode(canonicalId: string, projectId: string): Node {
+  return createRoleNode({ projectId, canonicalId });
 }
 
 export function resolveNodeId(graph: Graph, idOrCanonical: string): string | null {

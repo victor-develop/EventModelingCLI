@@ -1,22 +1,20 @@
-import { NODE_COLORS } from '../types';
-
-const LEGEND_ITEMS = [
-  { color: NODE_COLORS.cmd, label: 'Command' },
-  { color: NODE_COLORS.evt, label: 'Event' },
-  { color: NODE_COLORS.viewModel, label: 'ViewModel' },
-  { color: NODE_COLORS.shared, label: 'UI / Trigger / Proc' },
-];
+import { LEGEND_NODE_VISUAL_KINDS, nodeVisualMeta } from '../xyflow/components/nodeVisualKind';
 
 export function Legend() {
   return (
     <div className="overlay legend">
       <h3>Node Types</h3>
-      {LEGEND_ITEMS.map(item => (
-        <div className="legend-item" key={item.label}>
-          <div className="legend-dot" style={{ background: item.color }} />
-          <span>{item.label}</span>
-        </div>
-      ))}
+      {LEGEND_NODE_VISUAL_KINDS.map((kind) => {
+        const item = nodeVisualMeta(kind);
+        return (
+          <div className="legend-item" key={kind}>
+            <span className="legend-icon" style={{ color: item.color }}>
+              <item.Icon size={14} strokeWidth={2.4} aria-hidden="true" />
+            </span>
+            <span>{item.legendLabel}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

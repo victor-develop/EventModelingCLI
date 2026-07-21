@@ -1,5 +1,7 @@
 import { buildGraph, resolveNodeId } from '../graph/graph-builder';
+import type { Graph } from '../graph/graph-builder';
 import { toEventModelingEdges } from '../domain/event-modeling-edges';
+import type { Node } from '../domain/types';
 import type { LayoutState } from '../layout/types';
 import { LayoutEngine } from '../layout/layout-engine';
 import type { Workspace } from '../workspace/workspace';
@@ -14,6 +16,7 @@ import {
   normalizeRenderedEdgesForViewer,
 } from './normalize';
 import {
+  applyTruncatedPathPolicy,
   buildWalkEnvelope,
   collectDomainEdges,
   collectDomainNodes,
@@ -27,6 +30,7 @@ export function buildVisualizationSnapshot(args: {
   focus: string;
   direction?: SnapshotDirection;
   hops?: number;
+  includeTruncatedPaths?: boolean;
 }): VisualizationSnapshot {
   const manifest = args.workspace.getManifest();
   if (!manifest) {
@@ -39,9 +43,9 @@ export function buildVisualizationSnapshot(args: {
 
   const nodes = args.workspace.listNodes();
   const edges = args.workspace.listEdges();
-  const allDomainNodes = Object.fromEntries(nodes.map((node) => [node.canonicalId, node]));
   const domainGraph = buildGraph(nodes, edges);
   const graph = buildGraph(nodes, toEventModelingEdges(edges));
+  const allDomainNodes = collectCanonicalGraphNodes(domainGraph);
   const nodeLaneMap = resolveNodeLaneMap(domainGraph);
   const resolvedFocus = resolveNodeId(domainGraph, args.focus);
   if (!resolvedFocus) {
@@ -55,12 +59,19 @@ export function buildVisualizationSnapshot(args: {
 
   const direction = args.direction ?? 'both';
   const hops = args.hops ?? 2;
-  const envelope = buildWalkEnvelope({
+  const includeTruncatedPaths = args.includeTruncatedPaths ?? false;
+  const unfilteredEnvelope = buildWalkEnvelope({
     graph,
     focusNodeId: resolvedFocus,
     direction,
     hops,
     laneMap: nodeLaneMap,
+  });
+  const { envelope, hiddenPathCount } = applyTruncatedPathPolicy({
+    envelope: unfilteredEnvelope,
+    graph,
+    focusNodeId: resolvedFocus,
+    includeTruncatedPaths,
   });
 
   if (envelope.branches.length === 0) {
@@ -69,6 +80,10 @@ export function buildVisualizationSnapshot(args: {
     return {
       focusNodeId: resolvedFocus,
       projectName: manifest.name,
+      truncation: {
+        includeTruncatedPaths,
+        hiddenPathCount,
+      },
       layoutState: emptyLayoutState,
       occurrences: [],
       renderedEdges: [],
@@ -90,6 +105,10 @@ export function buildVisualizationSnapshot(args: {
   return {
     focusNodeId: resolvedFocus,
     projectName: manifest.name,
+    truncation: {
+      includeTruncatedPaths,
+      hiddenPathCount,
+    },
     layoutState,
     occurrences,
     renderedEdges: normalizeRenderedEdgesForViewer(coreEdges),
@@ -99,6 +118,14 @@ export function buildVisualizationSnapshot(args: {
     domainEdges: collectDomainEdges({ envelope, graph: domainGraph }),
     laneMap: createVisibleLaneMap(laneDescriptors),
   };
+}
+
+function collectCanonicalGraphNodes(graph: Graph): Record<string, Node> {
+  const result: Record<string, Node> = {};
+  for (const node of graph.nodes.values()) {
+    result[node.canonicalId] = node;
+  }
+  return result;
 }
 
 function createEmptyLayoutState(): LayoutState {

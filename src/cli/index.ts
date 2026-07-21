@@ -44,6 +44,7 @@ function main() {
     console.log('  view new <id>             Create a view model node');
     console.log('  proc new <id>             Create a processor node [--owner-role <roleId>]');
     console.log('  ui add <kind>             Add UI node [--owner-role <roleId>]');
+    console.log('  role add <id>             Create a role node [--name <label>]');
     console.log('  link cmd->evt <a> <b>     Link command to event');
     console.log('  link evt->view <a> <b>    Link event to view model');
     console.log('  walk --from <id>          Walk the graph');

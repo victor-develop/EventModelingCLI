@@ -84,10 +84,92 @@ describe('xyflow adapter contract fixtures', () => {
     expect(next.nodes.find((node) => node.id === 'frontier:right')?.position.x).toBe(672);
   });
 
+  test('maps processor and trigger display roles to distinct node types', () => {
+    const snapshot = {
+      focusNodeId: 'returns.cmd.sync-return-status',
+      projectName: 'Returns',
+      truncation: {
+        includeTruncatedPaths: false,
+        hiddenPathCount: 0,
+      },
+      layoutState: {},
+      occurrences: [
+        {
+          occurrenceId: 'occ-trigger-sync',
+          canonicalNodeId: 'returns.trigger.daily-sync',
+          nodeKind: 'shared',
+          lane: 'shared',
+          stageIndex: 0,
+          rowIndex: 0,
+          displayRole: 'trigger',
+          branchClusterId: 'bwd_0',
+          lockLevel: 'none',
+          x: 0,
+          y: 0,
+          width: 220,
+          height: 56,
+        },
+        {
+          occurrenceId: 'occ-proc-api',
+          canonicalNodeId: 'returns.proc.public-api',
+          nodeKind: 'shared',
+          lane: 'shared',
+          stageIndex: 0,
+          rowIndex: 1,
+          displayRole: 'processor',
+          branchClusterId: 'bwd_1',
+          lockLevel: 'none',
+          x: 0,
+          y: 80,
+          width: 220,
+          height: 56,
+        },
+      ],
+      renderedEdges: [],
+      swimlaneRects: [
+        { lane: 'shared', x: -40, y: -40, width: 700, height: 216 },
+      ],
+      laneDescriptors: [
+        { id: 'shared', kind: 'shared', label: 'shared' },
+      ],
+      domainNodes: {
+        'returns.trigger.daily-sync': {
+          id: 'returns.trigger.daily-sync',
+          projectId: 'returns',
+          kind: 'trigger',
+          canonicalId: 'returns.trigger.daily-sync',
+          displayName: 'Daily Sync',
+          tags: [],
+          domains: [],
+        },
+        'returns.proc.public-api': {
+          id: 'returns.proc.public-api',
+          projectId: 'returns',
+          kind: 'proc',
+          canonicalId: 'returns.proc.public-api',
+          displayName: 'Public API',
+          tags: [],
+          domains: [],
+        },
+      },
+      domainEdges: {},
+      laneMap: {},
+    } as unknown as VisualizationSnapshot;
+
+    const nodes = toReactFlowNodes(snapshot);
+
+    expect(nodes.find((node) => node.id === 'occ-trigger-sync')?.type).toBe('em.trigger');
+    expect(nodes.find((node) => node.id === 'occ-proc-api')?.type).toBe('em.proc');
+  });
+
   test('creates dynamic role lane groups and parents role-owned occurrences to them', () => {
     const snapshot = {
       focusNodeId: 'ui.screen.return-portal',
       projectName: 'Returns',
+      truncation: {
+        includeTruncatedPaths: false,
+        hiddenPathCount: 0,
+      },
       layoutState: {},
       occurrences: [
         {

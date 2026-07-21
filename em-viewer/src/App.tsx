@@ -1,8 +1,8 @@
 import './App.css';
 import { useState, useCallback, useMemo } from 'react';
-import { useGraphData } from './hooks/useGraphData';
+import { maxLayoutHopsForRoots, useGraphData } from './hooks/useGraphData';
 import { useWalkState } from './hooks/useWalkState';
-import { DEFAULT_LAYOUT_HOPS, MAX_LAYOUT_HOPS, MIN_LAYOUT_HOPS, clampLayoutHops } from './hooks/layoutRequest';
+import { DEFAULT_LAYOUT_HOPS, MIN_LAYOUT_HOPS, clampLayoutHops } from './hooks/layoutRequest';
 import { Header } from './components/Header';
 import { Legend } from './components/Legend';
 import { WalkControls } from './components/WalkControls';
@@ -11,7 +11,8 @@ import { XyflowCanvas } from './xyflow/components/XyflowCanvas';
 
 function App() {
   const { data, rootsData, loading, switching, error, layoutRequest, navigateLayout, refocus } = useGraphData();
-  const currentHops = clampLayoutHops(layoutRequest?.hops ?? DEFAULT_LAYOUT_HOPS);
+  const maxLayoutHops = maxLayoutHopsForRoots(rootsData);
+  const currentHops = clampLayoutHops(layoutRequest?.hops ?? DEFAULT_LAYOUT_HOPS, maxLayoutHops);
   const {
     snapshot: walkSnapshot,
     walkLeft,
@@ -22,7 +23,12 @@ function App() {
     canWalkRight,
     walkCount,
     isWalking,
-  } = useWalkState(data, { onNavigate: navigateLayout, walkHops: currentHops });
+  } = useWalkState(data, {
+    onNavigate: navigateLayout,
+    walkHops: currentHops,
+    maxHops: maxLayoutHops,
+    includeTruncatedPaths: layoutRequest?.includeTruncatedPaths ?? false,
+  });
   const [navCollapsed, setNavCollapsed] = useState(false);
   const visibleSnapshot = walkSnapshot ?? data;
 
@@ -52,7 +58,12 @@ function App() {
 
   const handleHopsChange = useCallback((hops: number) => {
     if (!layoutRequest) return;
-    navigateLayout({ ...layoutRequest, hops: clampLayoutHops(hops) }, 'replace');
+    navigateLayout({ ...layoutRequest, hops: clampLayoutHops(hops, maxLayoutHops) }, 'replace');
+  }, [layoutRequest, maxLayoutHops, navigateLayout]);
+
+  const handleIncludeTruncatedPathsChange = useCallback((includeTruncatedPaths: boolean) => {
+    if (!layoutRequest) return;
+    navigateLayout({ ...layoutRequest, includeTruncatedPaths }, 'replace');
   }, [layoutRequest, navigateLayout]);
 
   if (loading) {
@@ -86,7 +97,6 @@ function App() {
       {rootsData && rootsData.roots.length > 0 && (
         <FlowNavigator
           roots={rootsData.roots}
-          activeRootId={activeRootId}
           onSelectRoot={handleSelectRoot}
           collapsed={navCollapsed}
           onToggleCollapse={() => setNavCollapsed(c => !c)}
@@ -100,8 +110,11 @@ function App() {
         isWalking={switching || isWalking}
         hops={currentHops}
         minHops={MIN_LAYOUT_HOPS}
-        maxHops={MAX_LAYOUT_HOPS}
+        maxHops={maxLayoutHops}
         onHopsChange={handleHopsChange}
+        includeTruncatedPaths={layoutRequest?.includeTruncatedPaths ?? false}
+        hiddenTruncatedPathCount={visibleSnapshot.truncation?.hiddenPathCount ?? 0}
+        onIncludeTruncatedPathsChange={handleIncludeTruncatedPathsChange}
       />
       <XyflowCanvas
         snapshot={visibleSnapshot}

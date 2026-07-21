@@ -6,6 +6,11 @@ import { toDisplayNodeKind } from '../layout/types';
 import type { Branch, NormalizedPathEnvelope, PathNode, PathStep } from '../layout/types';
 import type { SnapshotDirection } from './types';
 
+export interface TruncatedPathPolicyResult {
+  envelope: NormalizedPathEnvelope;
+  hiddenPathCount: number;
+}
+
 export function buildEnvelopeFromWalkBranches(args: {
   graph: Graph;
   focusNodeId: string;
@@ -44,7 +49,7 @@ export function walkBranchesToEnvelope(args: {
         path.push({
           type: 'node',
           nodeId: canonicalNodeId,
-          nodeKind: toDisplayNodeKind(step.nodeKind ?? graphNode?.kind ?? 'cmd'),
+          nodeKind: step.nodeKind ?? graphNode?.kind ?? 'cmd',
           lane: laneFor(canonicalNodeId),
         });
       }
@@ -100,6 +105,34 @@ export function buildWalkEnvelope(args: {
     branches: walkResult.branches,
     laneMap: args.laneMap,
   });
+}
+
+export function applyTruncatedPathPolicy(args: {
+  envelope: NormalizedPathEnvelope;
+  graph: Graph;
+  focusNodeId: string;
+  includeTruncatedPaths: boolean;
+}): TruncatedPathPolicyResult {
+  if (args.includeTruncatedPaths || args.envelope.branches.length === 0) {
+    return { envelope: args.envelope, hiddenPathCount: 0 };
+  }
+
+  const reachable = computeVisibleSourceReachability(args.envelope, args.graph, args.focusNodeId);
+  const visibleBranches = args.envelope.branches.filter((branch) => {
+    const leftBoundary = getLeftBoundaryNode(branch);
+    if (!leftBoundary) return true;
+    if (isVisibleSourceNode(args.graph, leftBoundary.nodeId)) return true;
+    if (!hasCompleteUpstream(args.graph, leftBoundary.nodeId)) return true;
+    return reachable.has(leftBoundary.nodeId);
+  });
+
+  return {
+    envelope: {
+      ...args.envelope,
+      branches: visibleBranches,
+    },
+    hiddenPathCount: args.envelope.branches.length - visibleBranches.length,
+  };
 }
 
 export function collectDomainNodes(args: {
@@ -191,7 +224,75 @@ function pathNodeForGraphNode(
   return {
     type: 'node',
     nodeId: canonicalNodeId,
-    nodeKind: toDisplayNodeKind(node.kind),
+    nodeKind: node.kind,
     lane: laneFor(canonicalNodeId),
   };
+}
+
+function computeVisibleSourceReachability(
+  envelope: NormalizedPathEnvelope,
+  graph: Graph,
+  focusNodeId: string,
+): Set<string> {
+  const adjacency = new Map<string, Set<string>>();
+  const seeds = new Set<string>([focusNodeId]);
+
+  const addAdjacency = (from: string, to: string) => {
+    const targets = adjacency.get(from) ?? new Set<string>();
+    targets.add(to);
+    adjacency.set(from, targets);
+  };
+
+  for (const branch of envelope.branches) {
+    const path = branch.path;
+    for (const step of path) {
+      if (step.type === 'node' && isVisibleSourceNode(graph, step.nodeId)) {
+        seeds.add(step.nodeId);
+      }
+    }
+
+    for (let index = 0; index < path.length - 2; index++) {
+      const node1 = path[index];
+      const edge = path[index + 1];
+      const node2 = path[index + 2];
+      if (node1?.type !== 'node' || edge?.type !== 'edge' || node2?.type !== 'node') continue;
+
+      const fromNodeId = edge.displayDirection === 'backward' ? node2.nodeId : node1.nodeId;
+      const toNodeId = edge.displayDirection === 'backward' ? node1.nodeId : node2.nodeId;
+      addAdjacency(fromNodeId, toNodeId);
+
+      if (edge.edgeType === 'roleIssuesCommand' && edge.roleNodeId && edge.surfaceNodeId) {
+        seeds.add(edge.surfaceNodeId);
+      }
+    }
+  }
+
+  const reachable = new Set<string>();
+  const stack = [...seeds];
+  while (stack.length > 0) {
+    const nodeId = stack.pop()!;
+    if (reachable.has(nodeId)) continue;
+    reachable.add(nodeId);
+    for (const next of adjacency.get(nodeId) ?? []) {
+      stack.push(next);
+    }
+  }
+
+  return reachable;
+}
+
+function getLeftBoundaryNode(branch: Branch): PathNode | undefined {
+  const nodes = branch.path.filter((step): step is PathNode => step.type === 'node');
+  if (nodes.length === 0) return undefined;
+  return branch.direction === 'backward' ? nodes[nodes.length - 1] : nodes[0];
+}
+
+function isVisibleSourceNode(graph: Graph, nodeId: string): boolean {
+  const kind = graph.nodes.get(nodeId)?.kind;
+  return kind === 'role' || kind === 'trigger' || kind === 'proc';
+}
+
+function hasCompleteUpstream(graph: Graph, nodeId: string): boolean {
+  const incoming = graph.incoming.get(nodeId) ?? [];
+  return incoming.some((edge) => EVENT_MODELING_EDGE_TYPES.includes(edge.type));
 }

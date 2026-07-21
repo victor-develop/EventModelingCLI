@@ -267,4 +267,53 @@ describe('canonical dedup', () => {
     // Total: 2 cmds + 2 evts + 2 viewModels = 6
     expect(allOccs.length).toBe(6);
   });
+
+  test('cyclic branches merge same-stage semantic occurrences without collapsing later visits', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const cyclePath = [
+      { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+      { type: 'edge', edgeId: 'e-issue-lookup', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+      { type: 'edge', edgeId: 'e-lookup-complete', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+      { type: 'edge', edgeId: 'e-refresh-detail', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.view.return-detail', nodeKind: 'viewModel' },
+      { type: 'edge', edgeId: 'e-detail-consumed', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+      { type: 'edge', edgeId: 'e-issue-lookup', edgeType: 'roleIssuesCommand', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+      { type: 'edge', edgeId: 'e-lookup-complete', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+      { type: 'edge', edgeId: 'e-refresh-detail', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+      { type: 'node', nodeId: 'returns.view.return-detail', nodeKind: 'viewModel' },
+    ];
+    const envelope = makeEnvelope('returns.proc.public-api', [
+      { id: 'branch_a', dir: 'forward', path: cyclePath },
+      { id: 'branch_b', dir: 'forward', path: cyclePath },
+    ]);
+
+    const state = engine.initLayout(envelope);
+    const occurrences = Object.values(state.occurrences);
+    const duplicateKeys = new Map<string, number>();
+    for (const occurrence of occurrences) {
+      const key = [
+        occurrence.canonicalNodeId,
+        occurrence.nodeKind,
+        occurrence.stageIndex,
+        occurrence.lane,
+        occurrence.displayRole,
+      ].join('\u0000');
+      duplicateKeys.set(key, (duplicateKeys.get(key) ?? 0) + 1);
+    }
+
+    expect([...duplicateKeys.values()].filter((count) => count > 1)).toEqual([]);
+    expect(occurrences
+      .filter((occurrence) => occurrence.canonicalNodeId === 'returns.cmd.lookup-order')
+      .map((occurrence) => occurrence.stageIndex)
+      .sort((a, b) => a - b)).toEqual([1, 5]);
+    expect(occurrences
+      .filter((occurrence) => occurrence.canonicalNodeId === 'returns.view.return-detail')
+      .map((occurrence) => occurrence.stageIndex)
+      .sort((a, b) => a - b)).toEqual([3, 7]);
+  });
 });

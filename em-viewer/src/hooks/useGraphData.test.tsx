@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { LayoutState, Occurrence } from '@em/layout/types';
 import type { VisualizationSnapshot } from '@em/viewer-contract/types';
-import { useGraphData } from './useGraphData';
+import { maxLayoutHopsForRoots, useGraphData } from './useGraphData';
 
 describe('useGraphData layout URL hydration', () => {
   afterEach(() => {
@@ -29,7 +29,27 @@ describe('useGraphData layout URL hydration', () => {
     expect(requested.searchParams.get('focus')).toBe('ui.screen.return-detail');
     expect(requested.searchParams.get('direction')).toBe('backward');
     expect(requested.searchParams.get('hops')).toBe('3');
+    expect(requested.searchParams.get('includeTruncatedPaths')).toBe('false');
     expect(result.current.data?.focusNodeId).toBe('ui.screen.return-detail');
+  });
+
+  test('clamps shareable URL hops with the graph-derived maximum', async () => {
+    window.history.replaceState(null, '', '/?focus=ui.screen.return-detail&direction=forward&hops=99');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/api/roots')) return jsonResponse(rootsResponse({ eventModelingEdgeCount: 12 }));
+      if (url.startsWith('/api/layout')) return jsonResponse(snapshot('ui.screen.return-detail'));
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useGraphData());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const requested = new URL(String(fetchMock.mock.calls[1]?.[0]), 'http://localhost');
+
+    expect(requested.searchParams.get('hops')).toBe('12');
+    expect(result.current.layoutRequest?.hops).toBe(12);
   });
 
   test('root refocus writes a clean base focus URL and fetches default layout params', async () => {
@@ -59,9 +79,11 @@ describe('useGraphData layout URL hydration', () => {
     expect(requested.searchParams.get('focus')).toBe('ui.screen.app-installation');
     expect(requested.searchParams.get('direction')).toBe('both');
     expect(requested.searchParams.get('hops')).toBe('2');
+    expect(requested.searchParams.get('includeTruncatedPaths')).toBe('false');
     expect(visibleParams.get('focus')).toBe('ui.screen.app-installation');
     expect(visibleParams.has('direction')).toBe(false);
     expect(visibleParams.has('hops')).toBe(false);
+    expect(visibleParams.has('includeTruncatedPaths')).toBe(false);
   });
 
   test('browser history changes hydrate from the URL through the same layout request flow', async () => {
@@ -95,6 +117,7 @@ describe('useGraphData layout URL hydration', () => {
     expect(requested.searchParams.get('focus')).toBe('ui.screen.return-detail');
     expect(requested.searchParams.get('direction')).toBe('backward');
     expect(requested.searchParams.get('hops')).toBe('3');
+    expect(requested.searchParams.get('includeTruncatedPaths')).toBe('false');
   });
 });
 
@@ -105,7 +128,7 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-function rootsResponse() {
+function rootsResponse(overrides: { eventModelingEdgeCount?: number } = {}) {
   return {
     projectName: 'Returns Management',
     roots: [
@@ -113,14 +136,29 @@ function rootsResponse() {
       { canonicalId: 'ui.screen.app-installation', kind: 'ui.screen', displayName: 'App Installation' },
     ],
     laneMap: {},
+    graphStats: {
+      nodeCount: 8,
+      edgeCount: 9,
+      eventModelingEdgeCount: overrides.eventModelingEdgeCount ?? 9,
+    },
   };
 }
+
+describe('maxLayoutHopsForRoots', () => {
+  test('uses the event-modeling edge count when it is larger than the default', () => {
+    expect(maxLayoutHopsForRoots(rootsResponse({ eventModelingEdgeCount: 18 }))).toBe(18);
+  });
+});
 
 function snapshot(focusNodeId: string): VisualizationSnapshot {
   const occurrence = occurrenceFor(focusNodeId);
   return {
     focusNodeId,
     projectName: 'Returns Management',
+    truncation: {
+      includeTruncatedPaths: false,
+      hiddenPathCount: 0,
+    },
     layoutState: layoutStateFor(occurrence),
     occurrences: [occurrence],
     renderedEdges: [],

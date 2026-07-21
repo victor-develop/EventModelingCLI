@@ -1,4 +1,4 @@
-import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, findRoots } from '../src/graph/graph-builder';
+import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, findRoots, resolveNodeId } from '../src/graph/graph-builder';
 import { Node, Edge } from '../src/domain/types';
 
 function makeNode(id: string, kind: Node['kind']): Node {
@@ -235,6 +235,20 @@ describe('viaNodeId fallback', () => {
 
     expect(pathNodeIds).toContain('ui.form.booking-form');
     expect(pathNodeIds).not.toContain('role.guest');
+  });
+
+  test('adds implicit role nodes for role-issued commands', () => {
+    const nodes = [
+      makeNode('hotel.cmd.BookRoom', 'cmd'),
+      makeNode('ui.form.booking-form', 'ui.form' as Node['kind']),
+    ];
+    const edges: Edge[] = [
+      makeEdgeWithVia('e1', 'roleIssuesCommand', 'role.guest', 'hotel.cmd.BookRoom', 'ui.form.booking-form'),
+    ];
+    const g = buildGraph(nodes, edges);
+
+    expect(resolveNodeId(g, 'role.guest')).toBe('role.guest');
+    expect(g.nodes.get('role.guest')?.kind).toBe('role');
   });
 
   test('getNeighbors uses viaNodeId fallback', () => {

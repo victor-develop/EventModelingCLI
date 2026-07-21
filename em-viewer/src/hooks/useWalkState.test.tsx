@@ -37,6 +37,7 @@ describe('useWalkState stateless layout navigation', () => {
       focus: 'returns.evt.order-lookup-completed',
       direction: 'forward',
       hops: 3,
+      includeTruncatedPaths: false,
     });
 
     expect(fetch).not.toHaveBeenCalled();
@@ -74,8 +75,31 @@ describe('useWalkState stateless layout navigation', () => {
       focus: 'ui.screen.return-lookup',
       direction: 'backward',
       hops: 3,
+      includeTruncatedPaths: false,
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test('walkLeft ignores display-only role markers when selecting the frontier', () => {
+    const initial = snapshot([
+      roleOccurrence('occ-role-buyer', 'role.buyer', -1),
+      occurrence('occ-return-form', 'ui.screen.return-request-form', 'shared', 0),
+      occurrence('occ-request-command', 'returns.cmd.request-return', 'cmd', 1),
+    ]);
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, { onNavigate, walkHops: 2 }));
+
+    act(() => {
+      result.current.walkLeft();
+    });
+
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'ui.screen.return-request-form',
+      direction: 'backward',
+      hops: 2,
+      includeTruncatedPaths: false,
+    });
   });
 
   test('walkRight uses the configured hop count', () => {
@@ -95,6 +119,56 @@ describe('useWalkState stateless layout navigation', () => {
       focus: 'returns.cmd.lookup-order',
       direction: 'forward',
       hops: 5,
+      includeTruncatedPaths: false,
+    });
+  });
+
+  test('walkRight can use hop counts above the default max when the graph supports it', () => {
+    const initial = snapshot([
+      occurrence('occ-root', 'ui.screen.return-lookup', 'shared', 0),
+      occurrence('occ-frontier', 'returns.cmd.lookup-order', 'cmd', 1),
+    ]);
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, {
+      onNavigate,
+      walkHops: 12,
+      maxHops: 20,
+    }));
+
+    act(() => {
+      result.current.walkRight();
+    });
+
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'returns.cmd.lookup-order',
+      direction: 'forward',
+      hops: 12,
+      includeTruncatedPaths: false,
+    });
+  });
+
+  test('walk navigation preserves includeTruncatedPaths', () => {
+    const initial = snapshot([
+      occurrence('occ-root', 'returns.proc.public-api', 'shared', 0),
+      occurrence('occ-frontier', 'returns.cmd.lookup-order', 'cmd', 1),
+    ]);
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, {
+      onNavigate,
+      includeTruncatedPaths: true,
+    }));
+
+    act(() => {
+      result.current.walkRight();
+    });
+
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'returns.cmd.lookup-order',
+      direction: 'forward',
+      hops: 3,
+      includeTruncatedPaths: true,
     });
   });
 });
@@ -108,6 +182,10 @@ function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = [])
   return {
     focusNodeId: occurrences[0]?.canonicalNodeId ?? 'ui.screen.empty',
     projectName: 'Returns Management',
+    truncation: {
+      includeTruncatedPaths: false,
+      hiddenPathCount: 0,
+    },
     layoutState,
     occurrences,
     renderedEdges,
@@ -163,6 +241,28 @@ function occurrence(
     lockLevel: 'none',
     x: stageIndex * 400,
     y: lane === 'nonRole' ? 40 : lane === 'commandViewModel' ? 240 : 440,
+    width: 220,
+    height: 56,
+  };
+}
+
+function roleOccurrence(
+  occurrenceId: string,
+  canonicalNodeId: string,
+  stageIndex: number,
+): Occurrence {
+  return {
+    occurrenceId,
+    canonicalNodeId,
+    nodeKind: 'role',
+    lane: `role:${canonicalNodeId}`,
+    stageIndex,
+    rowIndex: 0,
+    displayRole: 'role',
+    branchClusterId: 'role',
+    lockLevel: 'none',
+    x: stageIndex * 400,
+    y: 40,
     width: 220,
     height: 56,
   };

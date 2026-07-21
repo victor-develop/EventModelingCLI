@@ -24,6 +24,7 @@ import {
   mergeOccurrences,
   buildEdgeOccurrenceLinks,
   mergeSameStageSharedOccurrences,
+  completeSameStageSemanticEdgeLinks,
 } from './occurrence';
 import type { EdgeOccurrenceLink } from './occurrence';
 import { assignStages } from './stage';
@@ -159,12 +160,7 @@ function assignExploreStages(
 function renderedEdgeKeysFromState(displayEdges: Record<string, RenderedEdge>): Set<string> {
   const result = new Set<string>();
   for (const edge of Object.values(displayEdges)) {
-    result.add(renderedEdgeKey({
-      fromOccId: edge.fromOccurrenceId,
-      toOccId: edge.toOccurrenceId,
-      originalEdgeId: typeof edge.meta?.originalEdgeId === 'string' ? edge.meta.originalEdgeId : edge.displayEdgeId,
-      originalEdgeType: typeof edge.meta?.originalEdgeType === 'string' ? edge.meta.originalEdgeType : edge.kind,
-    }));
+    result.add(renderedEdgeIdentityKey(edge));
   }
   return result;
 }
@@ -176,6 +172,35 @@ function renderedEdgeKey(link: EdgeOccurrenceLink): string {
     link.originalEdgeId,
     link.originalEdgeType,
   ].join('\u0000');
+}
+
+function renderedEdgeIdentityKey(edge: RenderedEdge): string {
+  if (edge.kind === 'role-to-shared') {
+    return [
+      edge.kind,
+      edge.fromOccurrenceId,
+      edge.toOccurrenceId,
+    ].join('\u0000');
+  }
+
+  return renderedEdgeKey({
+    fromOccId: edge.fromOccurrenceId,
+    toOccId: edge.toOccurrenceId,
+    originalEdgeId: typeof edge.meta?.originalEdgeId === 'string' ? edge.meta.originalEdgeId : edge.displayEdgeId,
+    originalEdgeType: typeof edge.meta?.originalEdgeType === 'string' ? edge.meta.originalEdgeType : edge.kind,
+  });
+}
+
+function edgeOccurrenceLinkIdentityKey(link: EdgeOccurrenceLink): string {
+  if (link.displayEdgeKind === 'role-to-shared') {
+    return [
+      link.displayEdgeKind,
+      link.fromOccId,
+      link.toOccId,
+    ].join('\u0000');
+  }
+
+  return renderedEdgeKey(link);
 }
 
 function semanticLiftEdgeOccurrenceLink(link: EdgeOccurrenceLink, displayEdgeId: string): DisplayEdge {
@@ -208,7 +233,18 @@ function addRoleMarkerOccurrences(args: {
 }): { occurrences: Occurrence[]; edgeOccLinks: EdgeOccurrenceLink[] } {
   const occurrences = [...args.occurrences];
   const edgeOccLinks = [...args.edgeOccLinks];
-  const seenMarkers = new Set<string>();
+  const markerIdByKey = new Map<string, string>();
+  const seenRoleSurfaceLinks = new Set<string>();
+
+  for (const occurrence of occurrences) {
+    if (occurrence.displayRole !== 'role') continue;
+    markerIdByKey.set(roleMarkerOccurrenceKey(occurrence), occurrence.occurrenceId);
+  }
+
+  for (const link of edgeOccLinks) {
+    if (link.displayEdgeKind !== 'role-to-shared') continue;
+    seenRoleSurfaceLinks.add(roleSurfaceLinkKey(link.fromOccId, link.toOccId));
+  }
 
   for (const branch of args.envelope.branches) {
     const path = branch.path;
@@ -223,31 +259,44 @@ function addRoleMarkerOccurrences(args: {
       const surfacePathNode = findAdjacentSurfacePathNode(path, index, edge, surfaceNodeId);
       if (!surfacePathNode) continue;
 
-      const surfaceOccId = args.pathOccurrenceIds.get(surfacePathNode);
-      if (!surfaceOccId) continue;
-      const markerKey = [roleNodeId, surfaceOccId, edge.edgeId].join('\u0000');
-      if (seenMarkers.has(markerKey)) continue;
-      seenMarkers.add(markerKey);
+      const surfaceOccurrence = findOccurrenceForPathNode(
+        occurrences,
+        args.pathOccurrenceIds,
+        surfacePathNode,
+        branch.branchId,
+      );
+      if (!surfaceOccurrence) continue;
 
-      const markerOccurrenceId = nextOccurrenceId(args.occurrenceCounter);
-      occurrences.push({
-        occurrenceId: markerOccurrenceId,
-        canonicalNodeId: roleNodeId,
-        nodeKind: 'role',
-        lane: toRoleDisplayLane(roleNodeId),
-        stageIndex: 0,
-        rowIndex: -1,
-        displayRole: 'role',
-        branchClusterId: `${branch.branchId}:role:${edge.edgeId}:${index}`,
-        lockLevel: 'free',
-        x: 0,
-        y: 0,
-        width: args.config.nodeWidth,
-        height: args.config.nodeHeight,
-      });
+      const markerStage = surfaceOccurrence.stageIndex - 1;
+      const markerLane = toRoleDisplayLane(roleNodeId);
+      const markerKey = roleMarkerKey(roleNodeId, markerLane, markerStage);
+      let markerOccurrenceId = markerIdByKey.get(markerKey);
+      if (!markerOccurrenceId) {
+        markerOccurrenceId = nextOccurrenceId(args.occurrenceCounter);
+        occurrences.push({
+          occurrenceId: markerOccurrenceId,
+          canonicalNodeId: roleNodeId,
+          nodeKind: 'role',
+          lane: markerLane,
+          stageIndex: markerStage,
+          rowIndex: -1,
+          displayRole: 'role',
+          branchClusterId: `role:${roleNodeId}:stage:${markerStage}`,
+          lockLevel: 'free',
+          x: markerStage * args.config.stageGap,
+          y: 0,
+          width: args.config.nodeWidth,
+          height: args.config.nodeHeight,
+        });
+        markerIdByKey.set(markerKey, markerOccurrenceId);
+      }
+
+      const linkKey = roleSurfaceLinkKey(markerOccurrenceId, surfaceOccurrence.occurrenceId);
+      if (seenRoleSurfaceLinks.has(linkKey)) continue;
+      seenRoleSurfaceLinks.add(linkKey);
       edgeOccLinks.push({
         fromOccId: markerOccurrenceId,
-        toOccId: surfaceOccId,
+        toOccId: surfaceOccurrence.occurrenceId,
         originalEdgeId: edge.edgeId,
         originalEdgeType: edge.edgeType,
         displayEdgeKind: 'role-to-shared',
@@ -258,6 +307,35 @@ function addRoleMarkerOccurrences(args: {
   }
 
   return { occurrences, edgeOccLinks };
+}
+
+function roleMarkerOccurrenceKey(occurrence: Occurrence): string {
+  return roleMarkerKey(occurrence.canonicalNodeId, occurrence.lane, occurrence.stageIndex);
+}
+
+function roleMarkerKey(roleNodeId: string, lane: string, stageIndex: number): string {
+  return [roleNodeId, lane, stageIndex].join('\u0000');
+}
+
+function roleSurfaceLinkKey(fromOccId: string, toOccId: string): string {
+  return [fromOccId, toOccId].join('\u0000');
+}
+
+function findOccurrenceForPathNode(
+  occurrences: Occurrence[],
+  pathOccurrenceIds: Map<PathNode, string>,
+  pathNode: PathNode,
+  branchId: string,
+): Occurrence | undefined {
+  const exactOccurrenceId = pathOccurrenceIds.get(pathNode);
+  if (exactOccurrenceId) {
+    const exact = occurrences.find((occurrence) => occurrence.occurrenceId === exactOccurrenceId);
+    if (exact) return exact;
+  }
+
+  const candidates = occurrences.filter((occurrence) => occurrence.canonicalNodeId === pathNode.nodeId);
+  if (candidates.length <= 1) return candidates[0];
+  return candidates.find((occurrence) => occurrence.branchClusterId === branchId) ?? candidates[0];
 }
 
 function findAdjacentSurfacePathNode(
@@ -282,7 +360,6 @@ function finalOccurrenceMergeKey(occurrence: Occurrence): string {
     occurrence.stageIndex,
     occurrence.lane,
     occurrence.displayRole,
-    occurrence.displayRole === 'role' ? occurrence.branchClusterId : '',
   ].join('\u0000');
 }
 
@@ -300,7 +377,7 @@ function remapEdgeOccurrenceLinks(
       fromOccId: occurrenceIdRemap.get(link.fromOccId) ?? link.fromOccId,
       toOccId: occurrenceIdRemap.get(link.toOccId) ?? link.toOccId,
     };
-    const key = renderedEdgeKey(remapped);
+    const key = edgeOccurrenceLinkIdentityKey(remapped);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(remapped);
@@ -347,12 +424,6 @@ function mergeDuplicateRoleMarkers(
   occurrences: Occurrence[],
   edgeOccLinks: EdgeOccurrenceLink[],
 ): { occurrences: Occurrence[]; edgeOccLinks: EdgeOccurrenceLink[]; removedOccurrenceIds: string[] } {
-  const roleMarkerTargetById = new Map<string, EdgeOccurrenceLink>();
-  for (const link of edgeOccLinks) {
-    if (link.displayEdgeKind !== 'role-to-shared') continue;
-    roleMarkerTargetById.set(link.fromOccId, link);
-  }
-
   const keptOccurrenceIdByKey = new Map<string, string>();
   const occurrenceIdRemap = new Map<string, string>();
   const removedOccurrenceIds: string[] = [];
@@ -364,17 +435,10 @@ function mergeDuplicateRoleMarkers(
       continue;
     }
 
-    const markerLink = roleMarkerTargetById.get(occurrence.occurrenceId);
-    if (!markerLink) {
-      merged.push(occurrence);
-      continue;
-    }
-
     const key = [
       occurrence.canonicalNodeId,
       occurrence.lane,
       occurrence.stageIndex,
-      markerLink.toOccId,
     ].join('\u0000');
     const keptOccurrenceId = keptOccurrenceIdByKey.get(key);
     if (keptOccurrenceId) {
@@ -398,8 +462,6 @@ function remapRoleMarkerEdgeOccurrenceLinks(
   edgeOccLinks: EdgeOccurrenceLink[],
   occurrenceIdRemap: Map<string, string>,
 ): EdgeOccurrenceLink[] {
-  if (occurrenceIdRemap.size === 0) return edgeOccLinks;
-
   const result: EdgeOccurrenceLink[] = [];
   const seen = new Set<string>();
   for (const link of edgeOccLinks) {
@@ -408,13 +470,7 @@ function remapRoleMarkerEdgeOccurrenceLinks(
       fromOccId: occurrenceIdRemap.get(link.fromOccId) ?? link.fromOccId,
       toOccId: occurrenceIdRemap.get(link.toOccId) ?? link.toOccId,
     };
-    const key = remapped.displayEdgeKind === 'role-to-shared'
-      ? [
-        remapped.displayEdgeKind,
-        remapped.fromOccId,
-        remapped.toOccId,
-      ].join('\u0000')
-      : renderedEdgeKey(remapped);
+    const key = edgeOccurrenceLinkIdentityKey(remapped);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(remapped);
@@ -457,21 +513,23 @@ export class LayoutEngine {
     const dynamicConfig = { ...this.config, laneBaseY: computeLaneBaseY(laneOrder) };
 
     let edgeOccLinks = buildEdgeOccurrenceLinks(envelope, occurrences, occurrenceModel.pathOccurrenceIds);
+
+    const anchorOcc = occurrences.find(o => o.canonicalNodeId === envelope.anchor.nodeId);
+    const anchorOccId = anchorOcc?.occurrenceId ?? occurrences[0]?.occurrenceId ?? '';
+
+    occurrences = assignStages(occurrences, edgeOccLinks as any, anchorOccId, dynamicConfig);
     ({ occurrences, edgeOccLinks } = addRoleMarkerOccurrences({
       envelope,
       occurrences,
       edgeOccLinks,
       pathOccurrenceIds: occurrenceModel.pathOccurrenceIds,
       occurrenceCounter,
-      config: this.config,
+      config: dynamicConfig,
     }));
-
-    const anchorOcc = occurrences.find(o => o.canonicalNodeId === envelope.anchor.nodeId);
-    const anchorOccId = anchorOcc?.occurrenceId ?? occurrences[0]?.occurrenceId ?? '';
-
-    occurrences = assignStages(occurrences, edgeOccLinks as any, anchorOccId, dynamicConfig);
     ({ occurrences, edgeOccLinks } = mergeSameStageSharedOccurrences(occurrences, edgeOccLinks));
     ({ occurrences, edgeOccLinks } = mergeDuplicateRoleMarkers(occurrences, edgeOccLinks));
+    ({ occurrences, edgeOccLinks } = mergeFinalDuplicateOccurrences(occurrences, edgeOccLinks, {}));
+    edgeOccLinks = completeSameStageSemanticEdgeLinks(envelope, occurrences, edgeOccLinks);
 
     const displayEdges: DisplayEdge[] = [];
     for (let i = 0; i < edgeOccLinks.length; i++) {
@@ -565,15 +623,6 @@ export class LayoutEngine {
     };
     bindExploreSourcePathOccurrences(envelope, incomingOccurrenceModel.pathOccurrenceIds, sourceOccurrence, revealDirection);
     let incomingOccurrences = incomingOccurrenceModel.occurrences;
-    let incomingRoleMarkerLinks: EdgeOccurrenceLink[] = [];
-    ({ occurrences: incomingOccurrences, edgeOccLinks: incomingRoleMarkerLinks } = addRoleMarkerOccurrences({
-      envelope,
-      occurrences: incomingOccurrences,
-      edgeOccLinks: [],
-      pathOccurrenceIds: incomingOccurrenceModel.pathOccurrenceIds,
-      occurrenceCounter,
-      config: this.config,
-    }));
     const existingOccs = Object.values(state.occurrences);
     const newOccurrences = sourceOccurrence
       ? incomingOccurrences.filter((occurrence) => !(
@@ -581,20 +630,17 @@ export class LayoutEngine {
         occurrence.displayRole === sourceOccurrence.displayRole
       ))
       : incomingOccurrences;
-    const { merged, added } = mergeOccurrences(newOccurrences, existingOccs);
+    const { merged } = mergeOccurrences(newOccurrences, existingOccs);
 
     const laneOrder = computeLaneOrder(merged);
     const dynamicConfig = { ...this.config, laneBaseY: computeLaneBaseY(laneOrder) };
 
-    let allEdgeLinks = [
-      ...buildEdgeOccurrenceLinks(envelope, merged, incomingOccurrenceModel.pathOccurrenceIds),
-      ...incomingRoleMarkerLinks,
-    ];
+    let allEdgeLinks = buildEdgeOccurrenceLinks(envelope, merged, incomingOccurrenceModel.pathOccurrenceIds);
 
     const anchorOcc = merged.find(o => o.occurrenceId === sourceOccurrenceId);
     const anchorId = anchorOcc?.occurrenceId ?? sourceOccurrenceId;
 
-    const staged = assignExploreStages(
+    let staged = assignExploreStages(
       merged,
       allEdgeLinks,
       state.occurrences,
@@ -602,25 +648,37 @@ export class LayoutEngine {
       revealDirection,
       dynamicConfig,
     );
+    ({ occurrences: staged, edgeOccLinks: allEdgeLinks } = addRoleMarkerOccurrences({
+      envelope,
+      occurrences: staged,
+      edgeOccLinks: allEdgeLinks,
+      pathOccurrenceIds: incomingOccurrenceModel.pathOccurrenceIds,
+      occurrenceCounter,
+      config: dynamicConfig,
+    }));
     const compacted = mergeSameStageSharedOccurrences(staged, allEdgeLinks);
     const roleCompacted = mergeDuplicateRoleMarkers(compacted.occurrences, compacted.edgeOccLinks);
     allEdgeLinks = roleCompacted.edgeOccLinks;
     const finalMerged = mergeFinalDuplicateOccurrences(roleCompacted.occurrences, allEdgeLinks, state.occurrences);
     allEdgeLinks = finalMerged.edgeOccLinks;
     const compactedOccurrences = finalMerged.occurrences;
+    allEdgeLinks = completeSameStageSemanticEdgeLinks(envelope, compactedOccurrences, allEdgeLinks);
     const removedOccurrenceIds = new Set([
       ...compacted.removedOccurrenceIds,
       ...roleCompacted.removedOccurrenceIds,
       ...finalMerged.removedOccurrenceIds,
     ]);
-    const addedAfterCompaction = added.filter(a => !removedOccurrenceIds.has(a.occurrenceId));
+    const addedAfterCompaction = compactedOccurrences.filter(o => (
+      !state.occurrences[o.occurrenceId] &&
+      !removedOccurrenceIds.has(o.occurrenceId)
+    ));
     const stagedAdded = compactedOccurrences.filter(o => addedAfterCompaction.some(a => a.occurrenceId === o.occurrenceId));
     const existingRenderedEdgeKeys = renderedEdgeKeysFromState(state.displayEdges);
 
     const newRenderedEdges: RenderedEdge[] = [];
     let edgeOrdinal = maxOrdinalFromIds(Object.keys(state.displayEdges), 'de');
     for (const link of allEdgeLinks) {
-      const isNew = !existingRenderedEdgeKeys.has(renderedEdgeKey(link));
+      const isNew = !existingRenderedEdgeKeys.has(edgeOccurrenceLinkIdentityKey(link));
       if (!isNew) continue;
       edgeOrdinal += 1;
       const de = semanticLiftEdgeOccurrenceLink(link, `de_${edgeOrdinal}`);

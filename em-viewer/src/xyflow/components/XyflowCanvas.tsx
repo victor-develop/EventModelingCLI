@@ -78,8 +78,10 @@ function XyflowCanvasInner({
 
   const fitSnapshotView = useCallback(() => {
     window.requestAnimationFrame(() => {
-      if (!flowReadyRef.current) return;
-      void reactFlow.fitView(FIT_VIEW_OPTIONS);
+      window.requestAnimationFrame(() => {
+        if (!flowReadyRef.current) return;
+        void reactFlow.fitView(FIT_VIEW_OPTIONS);
+      });
     });
   }, [reactFlow]);
 

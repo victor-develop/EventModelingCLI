@@ -36,9 +36,11 @@ describe('xyflow components', () => {
       </ReactFlowProvider>,
     );
 
-    expect(screen.getByText('cmd')).toBeInTheDocument();
-    expect(screen.getByText('cmd')).toHaveClass('kind-cmd');
-    expect(screen.getByText('cmd')).not.toHaveClass('lane-commandViewModel');
+    const badge = screen.getByText('cmd');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass('kind-cmd');
+    expect(badge).not.toHaveClass('lane-commandViewModel');
+    expect(badge.querySelector('.em-node-badge-icon')).toBeInTheDocument();
     expect(screen.getByText('Submit Order')).toBeInTheDocument();
     expect(screen.getByText('cmd.submit-order')).toBeInTheDocument();
     expect(screen.getByLabelText('Locked')).toBeInTheDocument();

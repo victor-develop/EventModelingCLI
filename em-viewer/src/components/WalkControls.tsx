@@ -10,6 +10,9 @@ interface WalkControlsProps {
   minHops: number;
   maxHops: number;
   onHopsChange: (hops: number) => void;
+  includeTruncatedPaths: boolean;
+  hiddenTruncatedPathCount: number;
+  onIncludeTruncatedPathsChange: (includeTruncatedPaths: boolean) => void;
 }
 
 export function WalkControls({
@@ -22,6 +25,9 @@ export function WalkControls({
   minHops,
   maxHops,
   onHopsChange,
+  includeTruncatedPaths,
+  hiddenTruncatedPathCount,
+  onIncludeTruncatedPathsChange,
 }: WalkControlsProps) {
   return (
     <div className="overlay walk-controls">
@@ -42,6 +48,30 @@ export function WalkControls({
           onChange={(event) => onHopsChange(Number(event.target.value))}
         />
       </label>
+      <div className="truncated-control" role="tablist" aria-label="Truncated paths">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!includeTruncatedPaths}
+          className={!includeTruncatedPaths ? 'is-active' : undefined}
+          disabled={isWalking}
+          onClick={() => onIncludeTruncatedPathsChange(false)}
+          title={`${hiddenTruncatedPathCount} truncated paths hidden`}
+        >
+          Clean
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={includeTruncatedPaths}
+          className={includeTruncatedPaths ? 'is-active' : undefined}
+          disabled={isWalking}
+          onClick={() => onIncludeTruncatedPathsChange(true)}
+          title="Include truncated paths"
+        >
+          All Paths
+        </button>
+      </div>
       <button onClick={onWalkRight} disabled={!canWalkRight || isWalking} title={`Walk right (expand ${hops} edges forward)`}>
         Walk Right
         <ChevronRight size={16} />

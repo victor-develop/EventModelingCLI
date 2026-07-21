@@ -109,11 +109,16 @@ button {
   margin: 5px 0;
 }
 
-.legend-dot {
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
+.legend-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f6f4;
+  border: 1px solid #dfe5df;
 }
 
 .overlay.walk-controls {
@@ -122,7 +127,10 @@ button {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 10px;
+  max-width: calc(100vw - 32px);
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -158,8 +166,7 @@ button {
 .overlay.walk-controls button:focus-visible,
 .inspector-actions button:focus-visible,
 .flow-nav-toggle:focus-visible,
-.flow-nav-close:focus-visible,
-.flow-nav-item:focus-visible,
+.flow-nav-icon-button:focus-visible,
 .frontier-handle:focus-visible {
   outline: 3px solid rgba(28, 124, 125, 0.28);
   outline-offset: 2px;
@@ -168,6 +175,32 @@ button {
 .overlay.walk-controls button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.truncated-control {
+  min-height: 40px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(76px, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #d6ded9;
+  border-radius: 7px;
+  background: #f4f7f5;
+}
+
+.overlay.walk-controls .truncated-control button {
+  min-height: 30px;
+  padding: 6px 8px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+}
+
+.overlay.walk-controls .truncated-control button.is-active {
+  background: #ffffff;
+  border-color: #9fbcb8;
+  color: #184f52;
+  box-shadow: 0 1px 4px rgba(34, 42, 38, 0.08);
 }
 
 .hop-control {
@@ -265,7 +298,7 @@ button {
   margin: 0;
 }
 
-.flow-nav-close {
+.flow-nav-icon-button {
   width: 32px;
   height: 32px;
   border: 1px solid transparent;
@@ -278,64 +311,57 @@ button {
   justify-content: center;
 }
 
-.flow-nav-close:hover {
+.flow-nav-icon-button:hover {
   color: var(--ink);
   background: #f1f4f1;
   border-color: var(--line);
 }
 
-.flow-nav-list {
-  padding: 7px 8px 10px;
-  overflow-y: auto;
+.flow-nav-search {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 7px;
+  margin: 9px 10px 4px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid #d6ded9;
+  border-radius: 7px;
+  background: #fbfcfb;
+  color: var(--muted);
 }
 
-.flow-nav-item {
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 7px;
+.flow-nav-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
   background: transparent;
   color: var(--ink);
+  font: inherit;
   font-size: 13px;
-  cursor: pointer;
-  transition: background-color 150ms ease, border-color 150ms ease;
-  text-align: left;
 }
 
-.flow-nav-item:hover {
-  background: #f2f6f5;
-  border-color: #d9e7e5;
+.flow-nav-search input::placeholder {
+  color: #8a928e;
 }
 
-.flow-nav-item.active {
-  background: #e7f2f1;
-  border-color: #96c3bf;
-}
-
-.flow-nav-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.flow-nav-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.flow-nav-kind {
+.flow-nav-search button {
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
-  font-size: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.flow-nav-search button:hover {
+  color: var(--ink);
+  background: #eef3f2;
+  border-color: var(--line);
 }
 
 .xyflow-shell {
@@ -445,7 +471,8 @@ button {
 .em-node-badge {
   display: inline-flex;
   align-items: center;
-  max-width: 92px;
+  gap: 4px;
+  max-width: 112px;
   height: 18px;
   padding: 0 6px;
   border-radius: 5px;
@@ -454,6 +481,12 @@ button {
   font-weight: 750;
   line-height: 18px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.em-node-badge-icon {
+  flex: 0 0 auto;
 }
 
 .em-node-badge.kind-shared,

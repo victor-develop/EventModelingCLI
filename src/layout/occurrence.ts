@@ -58,6 +58,7 @@ export function buildOccurrenceModel(
   const occurrenceIdCounter = { value: branchOffset };
 
   for (const branch of envelope.branches) {
+    const branchHasCycle = pathHasRepeatedNode(branch.path);
     const branchVisitCounts = new Map<string, number>();
 
     for (const step of branch.path) {
@@ -67,7 +68,13 @@ export function buildOccurrenceModel(
       const visitIndex = branchVisitCounts.get(node.nodeId) ?? 0;
       branchVisitCounts.set(node.nodeId, visitIndex + 1);
 
-      const dedupKey = occurrenceDedupKey(node.nodeId, displayKind, branch.branchId, visitIndex);
+      const dedupKey = occurrenceDedupKey(
+        node.nodeId,
+        displayKind,
+        branch.branchId,
+        visitIndex,
+        branchHasCycle,
+      );
 
       if (seen.has(dedupKey)) {
         const members = branchMembership.get(dedupKey) ?? [];
@@ -182,6 +189,51 @@ export function mergeSameStageSharedOccurrences(
   };
 }
 
+export function completeSameStageSemanticEdgeLinks(
+  envelope: NormalizedPathEnvelope,
+  occurrences: Occurrence[],
+  edgeOccLinks: EdgeOccurrenceLink[],
+): EdgeOccurrenceLink[] {
+  const occurrencesByNodeId = new Map<string, Occurrence[]>();
+  for (const occurrence of occurrences) {
+    const nodeOccurrences = occurrencesByNodeId.get(occurrence.canonicalNodeId) ?? [];
+    nodeOccurrences.push(occurrence);
+    occurrencesByNodeId.set(occurrence.canonicalNodeId, nodeOccurrences);
+  }
+
+  const result = [...edgeOccLinks];
+  const seen = new Set(result.map(edgeOccurrenceLinkKey));
+  const semanticEdges = collectSemanticEdgeDefinitions(envelope);
+
+  for (const semanticEdge of semanticEdges) {
+    const fromOccurrences = occurrencesByNodeId.get(semanticEdge.fromNodeId) ?? [];
+    const toOccurrences = occurrencesByNodeId.get(semanticEdge.toNodeId) ?? [];
+
+    for (const fromOccurrence of fromOccurrences) {
+      for (const toOccurrence of toOccurrences) {
+        if (toOccurrence.stageIndex !== fromOccurrence.stageIndex + 1) continue;
+        if (fromOccurrence.nodeKind !== semanticEdge.fromNodeKind) continue;
+        if (toOccurrence.nodeKind !== semanticEdge.toNodeKind) continue;
+
+        const link: EdgeOccurrenceLink = {
+          fromOccId: fromOccurrence.occurrenceId,
+          toOccId: toOccurrence.occurrenceId,
+          originalEdgeId: semanticEdge.edgeId,
+          originalEdgeType: semanticEdge.edgeType,
+          displayFromNodeKind: fromOccurrence.nodeKind,
+          displayToNodeKind: toOccurrence.nodeKind,
+        };
+        const key = edgeOccurrenceLinkKey(link);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(link);
+      }
+    }
+  }
+
+  return result;
+}
+
 export function buildMergeKey(occ: Occurrence): MergeKey {
   return {
     canonicalNodeId: occ.canonicalNodeId,
@@ -253,10 +305,80 @@ function occurrenceDedupKey(
   displayKind: string,
   branchId: string,
   visitIndex: number,
+  branchHasCycle = false,
 ): string {
+  if (branchHasCycle) return `${nodeId}:${branchId}:${visitIndex}`;
   if (displayKind === 'shared' || displayKind === 'role') return `${nodeId}:${branchId}:${visitIndex}`;
   if (visitIndex > 0) return `${nodeId}:${branchId}:${visitIndex}`;
   return nodeId;
+}
+
+interface SemanticEdgeDefinition {
+  edgeId: string;
+  edgeType: string;
+  fromNodeId: string;
+  toNodeId: string;
+  fromNodeKind: DisplayNodeKind;
+  toNodeKind: DisplayNodeKind;
+}
+
+function collectSemanticEdgeDefinitions(envelope: NormalizedPathEnvelope): SemanticEdgeDefinition[] {
+  const result: SemanticEdgeDefinition[] = [];
+  const seen = new Set<string>();
+
+  for (const branch of envelope.branches) {
+    const pathSteps = branch.path;
+    for (let index = 0; index < pathSteps.length - 2; index++) {
+      const node1 = pathSteps[index];
+      const edge = pathSteps[index + 1];
+      const node2 = pathSteps[index + 2];
+      if (node1?.type !== 'node' || edge?.type !== 'edge' || node2?.type !== 'node') continue;
+
+      const fromNode = edge.displayDirection === 'backward' ? node2 : node1;
+      const toNode = edge.displayDirection === 'backward' ? node1 : node2;
+      const definition: SemanticEdgeDefinition = {
+        edgeId: edge.edgeId,
+        edgeType: edge.edgeType,
+        fromNodeId: fromNode.nodeId,
+        toNodeId: toNode.nodeId,
+        fromNodeKind: toDisplayNodeKind(fromNode.nodeKind),
+        toNodeKind: toDisplayNodeKind(toNode.nodeKind),
+      };
+      const key = [
+        definition.edgeId,
+        definition.edgeType,
+        definition.fromNodeId,
+        definition.toNodeId,
+        definition.fromNodeKind,
+        definition.toNodeKind,
+      ].join('\u0000');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(definition);
+    }
+  }
+
+  return result;
+}
+
+function edgeOccurrenceLinkKey(link: EdgeOccurrenceLink): string {
+  return [
+    link.fromOccId,
+    link.toOccId,
+    link.originalEdgeId,
+    link.originalEdgeType,
+    link.displayEdgeKind ?? '',
+  ].join('\u0000');
+}
+
+function pathHasRepeatedNode(path: PathStep[]): boolean {
+  const seen = new Set<string>();
+  for (const step of path) {
+    if (step.type !== 'node') continue;
+    if (seen.has(step.nodeId)) return true;
+    seen.add(step.nodeId);
+  }
+  return false;
 }
 
 function pickOccurrenceForPathNode(

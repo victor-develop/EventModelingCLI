@@ -519,6 +519,57 @@ describe('LayoutEngine', () => {
     expect(Object.keys(state.displayEdges)).toHaveLength(edgeCount);
   });
 
+  test('appendExploreResult does not duplicate an existing role marker edge for the same role and surface', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('ui.screen.return-portal', [
+      {
+        id: 'initial',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.return-portal', nodeKind: 'ui.screen' },
+          {
+            type: 'edge',
+            edgeId: 'issue-a',
+            edgeType: 'roleIssuesCommand',
+            displayDirection: 'forward' as const,
+            roleNodeId: 'role.buyer',
+            surfaceNodeId: 'ui.screen.return-portal',
+          },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+    const portalOcc = Object.values(state.occurrences)
+      .find((occ) => occ.canonicalNodeId === 'ui.screen.return-portal')!;
+    const edgeCount = Object.keys(state.displayEdges).length;
+
+    const patch = engine.appendExploreResult(state, portalOcc.occurrenceId, makeEnvelope('ui.screen.return-portal', [
+      {
+        id: 'second-command',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'ui.screen.return-portal', nodeKind: 'ui.screen' },
+          {
+            type: 'edge',
+            edgeId: 'issue-b',
+            edgeType: 'roleIssuesCommand',
+            displayDirection: 'forward' as const,
+            roleNodeId: 'role.buyer',
+            surfaceNodeId: 'ui.screen.return-portal',
+          },
+          { type: 'node', nodeId: 'returns.cmd.request-return', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+    const roleEdges = Object.values(state.displayEdges)
+      .filter((edge) => edge.kind === 'role-to-shared');
+
+    expect(roleEdges).toHaveLength(1);
+    expect(patch.addedEdges.filter((edge) => edge.kind === 'role-to-shared')).toHaveLength(0);
+    expect(patch.addedEdges.filter((edge) => edge.kind === 'shared-to-cmd')).toHaveLength(1);
+    expect(Object.keys(state.displayEdges)).toHaveLength(edgeCount + 1);
+  });
+
   test('duplicate shared branch targets route left-to-right', () => {
     const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
     const state = engine.initLayout(makeEnvelope('view.tracking-status', [
@@ -550,6 +601,122 @@ describe('LayoutEngine', () => {
       .filter((occ) => occ.canonicalNodeId === 'ui.section.tracking');
     expect(sections).toHaveLength(1);
     expect(sections[0].stageIndex).toBe(4);
+  });
+
+  test('cyclic branches are linearly unrolled instead of pushing stages unboundedly', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('returns.proc.public-api', [
+      {
+        id: 'backward_cycle',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'e-view-proc', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.view.return-detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'e-evt-view', edgeType: 'eventRefreshesViewModel', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e-cmd-evt', edgeType: 'commandCausesEvent', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e-proc-cmd', edgeType: 'processorOrTriggerIssuesCommand', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'e-view-proc-again', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.view.return-context', nodeKind: 'viewModel' },
+        ],
+      },
+      {
+        id: 'forward_cycle',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'e-proc-cmd-fwd', edgeType: 'processorOrTriggerIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'e-cmd-evt-fwd', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'e-evt-view-fwd', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.view.return-detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'e-view-proc-fwd', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'e-proc-cmd-again', edgeType: 'processorOrTriggerIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+        ],
+      },
+    ]));
+
+    const occurrences = Object.values(state.occurrences);
+    const stages = occurrences.map((occ) => occ.stageIndex);
+
+    expect(Math.max(...stages)).toBeLessThanOrEqual(9);
+    expect(occurrences
+      .filter((occ) => occ.canonicalNodeId === 'returns.cmd.lookup-order')
+      .map((occ) => occ.stageIndex)
+      .sort((a, b) => a - b)).toEqual([1, 5]);
+    expect(Object.values(state.displayEdges).every((edge) => {
+      const from = state.occurrences[edge.fromOccurrenceId]!;
+      const to = state.occurrences[edge.toOccurrenceId]!;
+      return to.stageIndex >= from.stageIndex;
+    })).toBe(true);
+  });
+
+  test('initLayout completes visible adjacent semantic fanout edges after occurrence compaction', () => {
+    const engine = new LayoutEngine(DEFAULT_LAYOUT_CONFIG);
+    const state = engine.initLayout(makeEnvelope('returns.proc.public-api', [
+      {
+        id: 'first_order_lookup_to_detail',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'issue-lookup', edgeType: 'processorOrTriggerIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'order-verified', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'refresh-detail', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.view.return-detail', nodeKind: 'viewModel' },
+        ],
+      },
+      {
+        id: 'context_consumed_without_visible_refresh',
+        dir: 'backward',
+        path: [
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'context-consumed', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'backward' as const },
+          { type: 'node', nodeId: 'returns.view.return-request-context', nodeKind: 'viewModel' },
+        ],
+      },
+      {
+        id: 'later_cycle_contains_context_refresh_definition',
+        dir: 'forward',
+        path: [
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'issue-lookup', edgeType: 'processorOrTriggerIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'order-verified', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'refresh-detail', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.view.return-detail', nodeKind: 'viewModel' },
+          { type: 'edge', edgeId: 'detail-consumed', edgeType: 'viewModelConsumedByUiOrProcessor', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.proc.public-api', nodeKind: 'proc' },
+          { type: 'edge', edgeId: 'issue-lookup', edgeType: 'processorOrTriggerIssuesCommand', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.cmd.lookup-order', nodeKind: 'cmd' },
+          { type: 'edge', edgeId: 'order-verified', edgeType: 'commandCausesEvent', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.evt.order-verified', nodeKind: 'evt' },
+          { type: 'edge', edgeId: 'refresh-context', edgeType: 'eventRefreshesViewModel', displayDirection: 'forward' as const },
+          { type: 'node', nodeId: 'returns.view.return-request-context', nodeKind: 'viewModel' },
+        ],
+      },
+    ]));
+
+    const orderVerified = Object.values(state.occurrences)
+      .find((occ) => occ.canonicalNodeId === 'returns.evt.order-verified' && occ.stageIndex === 2)!;
+    const requestContext = Object.values(state.occurrences)
+      .find((occ) => occ.canonicalNodeId === 'returns.view.return-request-context' && occ.stageIndex === 3)!;
+    const incomingContextRefresh = Object.values(state.displayEdges).filter((edge) =>
+      edge.fromOccurrenceId === orderVerified.occurrenceId &&
+      edge.toOccurrenceId === requestContext.occurrenceId &&
+      edge.meta.originalEdgeId === 'refresh-context'
+    );
+
+    expect(incomingContextRefresh).toHaveLength(1);
+    expect(incomingContextRefresh[0]?.kind).toBe('evt-to-viewModel');
   });
 
   test('appendExploreResult emits repeated original edges when occurrence endpoints differ', () => {

@@ -19,6 +19,18 @@ describe('layoutRequest URL helpers', () => {
       focus: 'ui.screen.return-detail',
       direction: 'backward',
       hops: 3,
+      includeTruncatedPaths: false,
+    });
+  });
+
+  test('reads includeTruncatedPaths from shareable URLs', () => {
+    window.history.replaceState(null, '', '/?focus=ui.screen.return-detail&includeTruncatedPaths=true');
+
+    expect(readLayoutRequestFromLocation('ui.screen.fallback')).toEqual({
+      focus: 'ui.screen.return-detail',
+      direction: 'both',
+      hops: 2,
+      includeTruncatedPaths: true,
     });
   });
 
@@ -29,6 +41,7 @@ describe('layoutRequest URL helpers', () => {
       focus: 'ui.screen.return-lookup',
       direction: 'both',
       hops: 2,
+      includeTruncatedPaths: false,
     });
   });
 
@@ -42,6 +55,7 @@ describe('layoutRequest URL helpers', () => {
     expect(params.get('focus')).toBe('returns.view.order-summary');
     expect(params.get('direction')).toBe('forward');
     expect(params.get('hops')).toBe('5');
+    expect(params.has('includeTruncatedPaths')).toBe(false);
   });
 
   test('clamps URL hops to the supported range', () => {
@@ -51,6 +65,25 @@ describe('layoutRequest URL helpers', () => {
       focus: 'ui.screen.return-detail',
       direction: 'forward',
       hops: 6,
+      includeTruncatedPaths: false,
+    });
+  });
+
+  test('accepts a runtime hop max for larger graphs', () => {
+    window.history.replaceState(null, '', '/?focus=ui.screen.return-detail&direction=forward&hops=99');
+
+    expect(readLayoutRequestFromLocation('ui.screen.fallback', 24)).toEqual({
+      focus: 'ui.screen.return-detail',
+      direction: 'forward',
+      hops: 24,
+      includeTruncatedPaths: false,
+    });
+
+    expect(walkLayoutRequest('ui.screen.return-detail', 'forward', 18, false, 24)).toEqual({
+      focus: 'ui.screen.return-detail',
+      direction: 'forward',
+      hops: 18,
+      includeTruncatedPaths: false,
     });
   });
 
@@ -63,6 +96,7 @@ describe('layoutRequest URL helpers', () => {
     expect(params.get('focus')).toBe('ui.screen.app-installation');
     expect(params.has('direction')).toBe(false);
     expect(params.has('hops')).toBe(false);
+    expect(params.has('includeTruncatedPaths')).toBe(false);
   });
 
   test('always includes direction and hops for API requests', () => {
@@ -71,5 +105,19 @@ describe('layoutRequest URL helpers', () => {
     expect(params.get('focus')).toBe('ui.screen.return-lookup');
     expect(params.get('direction')).toBe('both');
     expect(params.get('hops')).toBe('2');
+    expect(params.get('includeTruncatedPaths')).toBe('false');
+  });
+
+  test('writes includeTruncatedPaths when all paths are requested', () => {
+    window.history.replaceState(null, '', '/?focus=old');
+
+    writeLayoutRequestToLocation({
+      ...defaultLayoutRequest('returns.proc.public-api'),
+      includeTruncatedPaths: true,
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('focus')).toBe('returns.proc.public-api');
+    expect(params.get('includeTruncatedPaths')).toBe('true');
   });
 });

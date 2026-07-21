@@ -1,6 +1,7 @@
 import { Workspace } from '../workspace/workspace';
 import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeType } from '../domain/types';
 import { toEventModelingEdges } from '../domain/event-modeling-edges';
+import { createRoleNode } from '../domain/roles';
 import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId, findRoots } from '../graph/graph-builder';
 import { lintCanonicalId } from '../validation/lint';
 import { validate } from '../validation/validate';
@@ -289,6 +290,75 @@ function resolveOwnerRole(ws: Workspace, ownerRole: string | undefined): string 
   return ws.getNode(ownerRole)?.canonicalId ?? ownerRole;
 }
 
+export function roleAdd(ws: Workspace, canonicalId: string, displayName?: string): CLIResult {
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const manifest = ws.getManifest()!;
+  const existing = ws.getNode(canonicalId);
+  if (existing) return errResult('em role add', 'DUPLICATE', `Node "${canonicalId}" already exists`);
+  const lintErrors = lintCanonicalId(canonicalId, 'role', new Set(ws.listNodes().map(n => n.canonicalId)));
+  const blocking = lintErrors.filter(e => e.severity === 'error');
+  if (blocking.length > 0) {
+    return errResult('em role add', 'INVALID_CANONICAL_ID', blocking.map(e => e.message).join('; '), {
+      projectId: manifest.id,
+      details: { errors: blocking },
+    });
+  }
+
+  const node = createRoleNode({
+    id: ws.generateNodeId(),
+    projectId: manifest.id,
+    canonicalId,
+    displayName,
+  });
+  ws.saveNode(node);
+  addDraftOp(ws, 'add', 'node', canonicalId);
+  const ctx = ws.getContext();
+  return okResult('em role add', {
+    node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
+  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+}
+
+function ensureRoleNode(ws: Workspace, roleId: string, commandName: string): Node | CLIResult {
+  if (!roleId) {
+    return errResult(commandName, 'MISSING_ROLE', 'Role id is required');
+  }
+
+  const existing = ws.getNode(roleId);
+  if (existing) {
+    if (existing.kind !== 'role') {
+      return errResult(commandName, 'INVALID_ROLE_NODE', `Role "${roleId}" resolves to a ${existing.kind} node`, {
+        projectId: ws.getManifest()?.id,
+        details: { roleId, kind: existing.kind },
+      });
+    }
+    return existing;
+  }
+
+  const manifest = ws.getManifest()!;
+  const lintErrors = lintCanonicalId(roleId, 'role', new Set(ws.listNodes().map(n => n.canonicalId)));
+  const blocking = lintErrors.filter(e => e.severity === 'error');
+  if (blocking.length > 0) {
+    return errResult(commandName, 'INVALID_CANONICAL_ID', blocking.map(e => e.message).join('; '), {
+      projectId: manifest.id,
+      details: { errors: blocking },
+    });
+  }
+
+  const roleNode = createRoleNode({
+    id: ws.generateNodeId(),
+    projectId: manifest.id,
+    canonicalId: roleId,
+  });
+  ws.saveNode(roleNode);
+  addDraftOp(ws, 'add', 'node', roleNode.canonicalId);
+  return roleNode;
+}
+
+function isCliResult(value: Node | CLIResult): value is CLIResult {
+  return 'ok' in value;
+}
+
 export function procNew(ws: Workspace, canonicalId: string, ownerRole?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
@@ -565,7 +635,6 @@ function createRoleIssuesCommand(
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
   const manifest = ws.getManifest()!;
-  const role = ws.getNode(roleId);
   const via = ws.getNode(viaId);
   const cmd = ws.getNode(cmdId);
   if (!cmd) return errResult(commandName, 'NOT_FOUND', `Command "${cmdId}" not found`);
@@ -573,12 +642,14 @@ function createRoleIssuesCommand(
   if (!via.kind.startsWith('ui.') && via.kind !== 'proc') {
     return errResult(commandName, 'INVALID_VIA_NODE', `Via node "${viaId}" must be a UI node or processor`);
   }
+  const role = ensureRoleNode(ws, roleId, commandName);
+  if (isCliResult(role)) return role;
   const edgeId = ws.generateEdgeId();
   const edge = {
     id: edgeId,
     projectId: manifest.id,
     type: 'roleIssuesCommand' as const,
-    fromNodeId: role?.canonicalId ?? roleId,
+    fromNodeId: role.canonicalId,
     toNodeId: cmd.canonicalId,
     viaNodeId: via.canonicalId,
   };
@@ -1169,6 +1240,7 @@ export function layout(
   direction: string = 'both',
   maxHops?: number,
   format: string = 'json',
+  includeTruncatedPaths = false,
 ): CLIResult {
   try {
     const snapshot = buildVisualizationSnapshot({
@@ -1176,6 +1248,7 @@ export function layout(
       focus: focusNodeId,
       direction: direction as SnapshotDirection,
       hops: maxHops ?? 2,
+      includeTruncatedPaths,
     });
 
     if (format === 'table') {

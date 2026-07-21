@@ -334,6 +334,67 @@ describe('buildVisualizationSnapshot', () => {
     }
   });
 
+  test('focuses an implicit role and merges same-column actor markers across surfaces', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'ui.screen.return-lookup', 'ui.screen', 'Return Lookup'));
+      workspace.saveNode(node(projectId, 'ui.screen.return-request-form', 'ui.screen', 'Return Request Form'));
+      workspace.saveNode(node(projectId, 'returns.cmd.lookup-order', 'cmd', 'Lookup Order'));
+      workspace.saveNode(node(projectId, 'returns.cmd.request-return', 'cmd', 'Request Return'));
+      workspace.saveEdge(edge(projectId, 'edge-buyer-lookup', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.lookup-order', 'ui.screen.return-lookup'));
+      workspace.saveEdge(edge(projectId, 'edge-buyer-request', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.request-return', 'ui.screen.return-request-form'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'role.buyer',
+        direction: 'forward',
+        hops: 1,
+      });
+      const buyerMarkers = snapshot.occurrences
+        .filter((occ) => occ.displayRole === 'role' && occ.canonicalNodeId === 'role.buyer');
+      const surfaces = snapshot.occurrences
+        .filter((occ) => occ.canonicalNodeId === 'ui.screen.return-lookup' || occ.canonicalNodeId === 'ui.screen.return-request-form');
+      const roleToSharedEdges = snapshot.renderedEdges
+        .filter((item) => item.kind === 'role-to-shared');
+      const sharedToCommandEdges = snapshot.renderedEdges
+        .filter((item) => item.kind === 'shared-to-cmd');
+
+      expect(snapshot.focusNodeId).toBe('role.buyer');
+      expect(snapshot.domainNodes['role.buyer']?.kind).toBe('role');
+      expect(buyerMarkers).toHaveLength(1);
+      expect(buyerMarkers[0]?.stageIndex).toBe(-1);
+      expect(surfaces.map((occ) => occ.stageIndex).sort()).toEqual([0, 0]);
+      expect(roleToSharedEdges).toHaveLength(2);
+      expect(sharedToCommandEdges).toHaveLength(2);
+      expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('accepts backward exploration from an implicit role focus without treating the role as missing', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'ui.screen.return-lookup', 'ui.screen', 'Return Lookup'));
+      workspace.saveNode(node(projectId, 'returns.cmd.lookup-order', 'cmd', 'Lookup Order'));
+      workspace.saveEdge(edge(projectId, 'edge-buyer-lookup', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.lookup-order', 'ui.screen.return-lookup'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'role.buyer',
+        direction: 'backward',
+        hops: 2,
+      });
+
+      expect(snapshot.focusNodeId).toBe('role.buyer');
+      expect(snapshot.domainNodes['role.buyer']?.kind).toBe('role');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('places an explicitly ownerRole surface into the owner role lane', () => {
     const { workspace, cleanup } = createOrderWorkspace();
     try {
@@ -364,6 +425,110 @@ describe('buildVisualizationSnapshot', () => {
         'role:role.merchant',
         'commandViewModel',
       ]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('hides truncated input paths by default while keeping source-reachable paths', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'role.buyer', 'role', 'Buyer'));
+      workspace.saveNode(node(projectId, 'returns.proc.public-api', 'proc', 'Public API'));
+      workspace.saveNode(node(projectId, 'returns.cmd.lookup-order', 'cmd', 'Lookup Order'));
+      workspace.saveNode(node(projectId, 'returns.evt.order-verified', 'evt', 'Order Verified'));
+      workspace.saveNode(node(projectId, 'returns.cmd.request-return', 'cmd', 'Request Return'));
+      workspace.saveNode(node(projectId, 'returns.evt.return-requested', 'evt', 'Return Requested'));
+      workspace.saveNode(node(projectId, 'returns.view.return-detail', 'viewModel', 'Return Detail'));
+      workspace.saveEdge(edge(projectId, 'edge-buyer-lookup', 'roleIssuesCommand', 'role.buyer', 'returns.cmd.lookup-order', 'returns.proc.public-api'));
+      workspace.saveEdge(edge(projectId, 'edge-lookup-verified', 'commandCausesEvent', 'returns.cmd.lookup-order', 'returns.evt.order-verified'));
+      workspace.saveEdge(edge(projectId, 'edge-verified-detail', 'eventRefreshesViewModel', 'returns.evt.order-verified', 'returns.view.return-detail'));
+      workspace.saveEdge(edge(projectId, 'edge-requested-detail', 'eventRefreshesViewModel', 'returns.evt.return-requested', 'returns.view.return-detail'));
+      workspace.saveEdge(edge(projectId, 'edge-request-return', 'commandCausesEvent', 'returns.cmd.request-return', 'returns.evt.return-requested'));
+      workspace.saveEdge(edge(projectId, 'edge-detail-api', 'viewModelConsumedByUiOrProcessor', 'returns.view.return-detail', 'returns.proc.public-api'));
+
+      const cleanSnapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'returns.proc.public-api',
+        direction: 'both',
+        hops: 2,
+      });
+      const allPathsSnapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'returns.proc.public-api',
+        direction: 'both',
+        hops: 2,
+        includeTruncatedPaths: true,
+      });
+
+      expect(cleanSnapshot.truncation).toEqual({
+        includeTruncatedPaths: false,
+        hiddenPathCount: 1,
+      });
+      expect(cleanSnapshot.occurrences.map((occ) => occ.canonicalNodeId)).toContain('returns.evt.order-verified');
+      expect(cleanSnapshot.occurrences.map((occ) => occ.canonicalNodeId)).not.toContain('returns.evt.return-requested');
+      expect(allPathsSnapshot.truncation).toEqual({
+        includeTruncatedPaths: true,
+        hiddenPathCount: 0,
+      });
+      expect(allPathsSnapshot.occurrences.map((occ) => occ.canonicalNodeId)).toContain('returns.evt.return-requested');
+      expect(renderLayoutTable(cleanSnapshot)).toContain('hiddenPathCount: 1');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('treats processor command issuers as visible sources for truncation filtering', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'returns.view.schedule-config', 'viewModel', 'Schedule Config'));
+      workspace.saveNode(node(projectId, 'returns.proc.scheduler', 'proc', 'Scheduler'));
+      workspace.saveNode(node(projectId, 'returns.cmd.sync-return-status', 'cmd', 'Sync Return Status'));
+      workspace.saveNode(node(projectId, 'returns.evt.return-status-synced', 'evt', 'Return Status Synced'));
+      workspace.saveEdge(edge(projectId, 'edge-config-scheduler', 'viewModelConsumedByUiOrProcessor', 'returns.view.schedule-config', 'returns.proc.scheduler'));
+      workspace.saveEdge(edge(projectId, 'edge-scheduler-sync', 'processorOrTriggerIssuesCommand', 'returns.proc.scheduler', 'returns.cmd.sync-return-status'));
+      workspace.saveEdge(edge(projectId, 'edge-sync-event', 'commandCausesEvent', 'returns.cmd.sync-return-status', 'returns.evt.return-status-synced'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'returns.evt.return-status-synced',
+        direction: 'backward',
+        hops: 2,
+      });
+
+      expect(snapshot.truncation.hiddenPathCount).toBe(0);
+      const schedulerOccurrence = snapshot.occurrences
+        .find((occ) => occ.canonicalNodeId === 'returns.proc.scheduler');
+      expect(schedulerOccurrence?.displayRole).toBe('processor');
+      expect(renderLayoutTable(snapshot)).toContain('left-to-right edges: PASS');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('preserves trigger display role through the viewer contract', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'returns.trigger.daily-sync', 'trigger', 'Daily Sync'));
+      workspace.saveNode(node(projectId, 'returns.cmd.sync-return-status', 'cmd', 'Sync Return Status'));
+      workspace.saveNode(node(projectId, 'returns.evt.return-status-synced', 'evt', 'Return Status Synced'));
+      workspace.saveEdge(edge(projectId, 'edge-trigger-sync', 'processorOrTriggerIssuesCommand', 'returns.trigger.daily-sync', 'returns.cmd.sync-return-status'));
+      workspace.saveEdge(edge(projectId, 'edge-sync-event', 'commandCausesEvent', 'returns.cmd.sync-return-status', 'returns.evt.return-status-synced'));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'returns.cmd.sync-return-status',
+        direction: 'backward',
+        hops: 1,
+      });
+      const triggerOccurrence = snapshot.occurrences
+        .find((occ) => occ.canonicalNodeId === 'returns.trigger.daily-sync');
+
+      expect(triggerOccurrence?.displayRole).toBe('trigger');
+      expect(triggerOccurrence?.nodeKind).toBe('shared');
     } finally {
       cleanup();
     }

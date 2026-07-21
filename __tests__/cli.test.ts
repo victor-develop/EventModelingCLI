@@ -136,6 +136,14 @@ describe('Event Modeling CLI', () => {
       expect(ws.getNode('order.payment.proc.merchant-api')?.ownerRole).toBe('role.merchant');
     });
 
+    test('role add', () => {
+      const r = em('role', 'add', 'role.buyer', '--name', 'Buyer');
+      expect(r.ok).toBe(true);
+      expect((r.data.node as any).kind).toBe('role');
+      expect((r.data.node as any).canonicalId).toBe('role.buyer');
+      expect(ws.getNode('role.buyer')?.displayName).toBe('Buyer');
+    });
+
     test('trigger new', () => {
       const r = em('trigger', 'new', 'order.payment.trigger.webhook.stripe-event');
       expect(r.ok).toBe(true);
@@ -244,6 +252,7 @@ describe('Event Modeling CLI', () => {
       expect((r.data.edge as any).fromNodeId).toBe('role.customer');
       expect((r.data.edge as any).viaNodeId).toBe('ui.screen.detail');
       expect((r.data.edge as any).type).toBe('roleIssuesCommand');
+      expect(ws.getNode('role.customer')?.kind).toBe('role');
     });
 
     test('role issues-cmd via proc', () => {
@@ -255,6 +264,23 @@ describe('Event Modeling CLI', () => {
       expect((r.data.edge as any).fromNodeId).toBe('role.buyer');
       expect((r.data.edge as any).viaNodeId).toBe('return.proc.public-api');
       expect((r.data.edge as any).type).toBe('roleIssuesCommand');
+      expect(ws.getNode('role.buyer')?.kind).toBe('role');
+    });
+
+    test('role issues-cmd does not persist a role when validation fails', () => {
+      em('ui', 'add', 'screen', '--name', 'Return Portal');
+      const missingCommand = em('role', 'issues-cmd', '--role', 'role.buyer', '--via', 'ui.screen.return-portal', '--cmd', 'return.cmd.missing');
+      expect(missingCommand.ok).toBe(false);
+      expect(ws.getNode('role.buyer')).toBeNull();
+    });
+
+    test('role issues-cmd validates auto-created role ids', () => {
+      em('ui', 'add', 'screen', '--name', 'Return Portal');
+      em('cmd', 'new', 'return.cmd.request-return');
+      const r = em('role', 'issues-cmd', '--role', 'Role Buyer', '--via', 'ui.screen.return-portal', '--cmd', 'return.cmd.request-return');
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('INVALID_CANONICAL_ID');
+      expect(ws.getNode('Role Buyer')).toBeNull();
     });
   });
 

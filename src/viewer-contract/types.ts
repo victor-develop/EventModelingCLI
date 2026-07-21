@@ -18,6 +18,10 @@ export type LaneDescriptor = {
 export type VisualizationSnapshot = {
   focusNodeId: string;
   projectName: string;
+  truncation: {
+    includeTruncatedPaths: boolean;
+    hiddenPathCount: number;
+  };
   layoutState: LayoutState;
   occurrences: Occurrence[];
   renderedEdges: RenderedEdge[];

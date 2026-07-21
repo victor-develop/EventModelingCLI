@@ -30,8 +30,9 @@ export function createServerApp(ws: Workspace): {
 
   const nodes = manifest ? ws.listNodes() : [];
   const edges = manifest ? ws.listEdges() : [];
+  const eventModelingEdges = toEventModelingEdges(edges);
   const domainGraph = buildGraph(nodes, edges);
-  const eventModelingGraph = buildGraph(nodes, toEventModelingEdges(edges));
+  const eventModelingGraph = buildGraph(nodes, eventModelingEdges);
 
   const laneMap = resolveNodeLaneMap(domainGraph);
 
@@ -105,6 +106,11 @@ export function createServerApp(ws: Workspace): {
       })),
       projectName: manifest.name,
       laneMap: laneMapForNodes(rootIds),
+      graphStats: {
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        eventModelingEdgeCount: eventModelingEdges.length,
+      },
     });
   });
 
@@ -137,6 +143,7 @@ export function createServerApp(ws: Workspace): {
     const focus = (req.query.focus as string) || nodes[0]?.canonicalId || '';
     const direction = ((req.query.direction as string) || 'both') as SnapshotDirection;
     const hops = parseInt(req.query.hops as string) || 2;
+    const includeTruncatedPaths = parseBooleanQuery(req.query.includeTruncatedPaths);
 
     if (!focus) {
       res.status(400).json({
@@ -149,7 +156,13 @@ export function createServerApp(ws: Workspace): {
     }
 
     try {
-      res.json(buildVisualizationSnapshot({ workspace: ws, focus, direction, hops }));
+      res.json(buildVisualizationSnapshot({
+        workspace: ws,
+        focus,
+        direction,
+        hops,
+        includeTruncatedPaths,
+      }));
     } catch (error) {
       if (error instanceof VisualizationSnapshotError) {
         res.status(error.status).json({
@@ -200,6 +213,11 @@ export function createServerApp(ws: Workspace): {
     nodeCount: nodes.length,
     edgeCount: edges.length,
   };
+}
+
+function parseBooleanQuery(value: unknown): boolean {
+  if (Array.isArray(value)) return parseBooleanQuery(value[0]);
+  return value === true || value === 'true' || value === '1';
 }
 
 export function startServer(ws: Workspace, opts: { port?: number } = {}) {

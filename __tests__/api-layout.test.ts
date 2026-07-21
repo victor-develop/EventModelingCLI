@@ -28,12 +28,48 @@ describe('/api/layout', () => {
       expect(body.status).toBe(200);
       expect(body.json.focusNodeId).toBe('cmd.submit-order');
       expect(body.json.projectName).toBe('Order Management');
+      expect(body.json.truncation).toEqual({
+        includeTruncatedPaths: false,
+        hiddenPathCount: 0,
+      });
       expect(Array.isArray(body.json.occurrences)).toBe(true);
       expect(Array.isArray(body.json.renderedEdges)).toBe(true);
       expect(body.json.laneMap).toEqual({
         shared: 'shared',
         commandViewModel: 'command / viewModel',
         event: 'event',
+      });
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('passes includeTruncatedPaths to the layout contract', async () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const { app } = createServerApp(workspace);
+      server = app.listen(0);
+      const body = await getJson(server, '/api/layout?focus=cmd.submit-order&direction=both&hops=2&includeTruncatedPaths=true');
+
+      expect(body.status).toBe(200);
+      expect(body.json.truncation.includeTruncatedPaths).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('/api/roots returns graph stats for dynamic viewer controls', async () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const { app } = createServerApp(workspace);
+      server = app.listen(0);
+      const body = await getJson(server, '/api/roots');
+
+      expect(body.status).toBe(200);
+      expect(body.json.graphStats).toEqual({
+        nodeCount: 5,
+        edgeCount: 4,
+        eventModelingEdgeCount: 4,
       });
     } finally {
       cleanup();

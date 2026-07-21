@@ -6,6 +6,7 @@ import type { RootNodeInfo } from '../types';
 import { fetchLayout } from './layoutApi';
 import type { LayoutRequest } from './layoutRequest';
 import {
+  DEFAULT_MAX_LAYOUT_HOPS,
   defaultLayoutRequest,
   readLayoutRequestFromLocation,
   writeLayoutRequestToLocation,
@@ -24,6 +25,11 @@ export interface RootsResponse {
   roots: RootNodeInfo[];
   projectName: string;
   laneMap: Record<string, string>;
+  graphStats?: {
+    nodeCount: number;
+    edgeCount: number;
+    eventModelingEdgeCount: number;
+  };
 }
 
 type NavigateMode = 'push' | 'replace';
@@ -46,7 +52,10 @@ export function useGraphData() {
         return r.json() as Promise<RootsResponse>;
       })
       .then(async (rootsResp) => {
-        const request = readLayoutRequestFromLocation(rootsResp.roots[0]?.canonicalId);
+        const request = readLayoutRequestFromLocation(
+          rootsResp.roots[0]?.canonicalId,
+          maxLayoutHopsForRoots(rootsResp),
+        );
         if (cancelled) return;
         setRootsData(rootsResp);
         setLayoutRequest(request);
@@ -113,7 +122,10 @@ export function useGraphData() {
       if (successfulRequestRef.current) setSwitching(true);
       else setLoading(true);
       setError(null);
-      setLayoutRequest(readLayoutRequestFromLocation(rootsData.roots[0]?.canonicalId));
+      setLayoutRequest(readLayoutRequestFromLocation(
+        rootsData.roots[0]?.canonicalId,
+        maxLayoutHopsForRoots(rootsData),
+      ));
     };
 
     window.addEventListener('popstate', onPopState);
@@ -130,6 +142,13 @@ export function useGraphData() {
     navigateLayout,
     refocus,
   };
+}
+
+export function maxLayoutHopsForRoots(rootsData: Pick<RootsResponse, 'graphStats'> | null | undefined): number {
+  return Math.max(
+    DEFAULT_MAX_LAYOUT_HOPS,
+    rootsData?.graphStats?.eventModelingEdgeCount ?? 0,
+  );
 }
 
 function isEmptyWalk(request: LayoutRequest, snapshot: VisualizationSnapshot): boolean {

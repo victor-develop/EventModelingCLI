@@ -24,6 +24,13 @@ export function renderLayoutTable(snapshot: VisualizationSnapshot): string {
   lines.push('PROJECT');
   lines.push(`name: ${snapshot.projectName}`);
   lines.push(`focusNodeId: ${snapshot.focusNodeId}`);
+  const truncation = getSnapshotTruncation(snapshot);
+  if (truncation) {
+    lines.push('');
+    lines.push('TRUNCATION');
+    lines.push(`includeTruncatedPaths: ${truncation.includeTruncatedPaths}`);
+    lines.push(`hiddenPathCount: ${truncation.hiddenPathCount}`);
+  }
   lines.push('');
   lines.push('OCCURRENCES');
   lines.push('occurrenceId | canonicalNodeId | nodeKind | lane | stageIndex | rowIndex | x | y | width | height | lockLevel');
@@ -86,6 +93,8 @@ export function renderLayoutAscii(snapshot: VisualizationSnapshot): string {
 
   lines.push(`PROJECT: ${snapshot.projectName}`);
   lines.push(`FOCUS: ${snapshot.focusNodeId}`);
+  const truncation = getSnapshotTruncation(snapshot);
+  if (truncation) lines.push(`TRUNCATED PATHS HIDDEN: ${truncation.hiddenPathCount}`);
   lines.push('');
   lines.push('STAGES');
   lines.push(renderStages(occurrences));
@@ -122,6 +131,12 @@ export function renderLayoutAscii(snapshot: VisualizationSnapshot): string {
   lines.push(...renderInvariantLines(renderInvariantSummary(snapshot)));
 
   return lines.join('\n');
+}
+
+function getSnapshotTruncation(
+  snapshot: VisualizationSnapshot,
+): { includeTruncatedPaths: boolean; hiddenPathCount: number } | undefined {
+  return snapshot.truncation;
 }
 
 function getSnapshotSwimlaneRects(snapshot: VisualizationSnapshot): SwimlaneRect[] {

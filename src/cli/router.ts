@@ -43,6 +43,11 @@ function fs(flags: Record<string, string | boolean>, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
+function fb(flags: Record<string, string | boolean>, key: string): boolean {
+  const v = flags[key];
+  return v === true || v === 'true' || v === '1';
+}
+
 export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
   const args = parseArgs(rawArgs);
   const { group, subgroup, action, positional, flags } = args;
@@ -92,6 +97,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
       break;
     }
     case 'role': {
+      if (subgroup === 'add') return cmd.roleAdd(ws, positional[2] ?? '', fs(flags, 'name') || undefined);
       if (subgroup === 'issues-cmd') return cmd.roleIssuesCmd(ws, fs(flags, 'role'), fs(flags, 'via'), fs(flags, 'cmd'));
       break;
     }
@@ -126,6 +132,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
       fs(flags, 'direction') || 'both',
       flags['hops'] ? Number(flags['hops']) : flags['max-hops'] ? Number(flags['max-hops']) : undefined,
       fs(flags, 'format') || 'legacy',
+      fb(flags, 'include-truncated-paths') || fb(flags, 'includeTruncatedPaths'),
     );
     case 'validate': return cmd.emValidate(ws);
     case 'roots': return cmd.roots(ws);

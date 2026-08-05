@@ -22,6 +22,7 @@ export function toReactFlowNodes(
     occurrence,
     swimlaneRects: snapshot.swimlaneRects,
     domainNodes: snapshot.domainNodes,
+    diffMarkers: snapshot.diffOverlay?.nodesByCanonicalId,
     interactionMode: 'full',
   }));
   const frontierNodes = options.includeFrontierHandles ? toFrontierHandleNodes(snapshot) : [];
@@ -63,6 +64,7 @@ export function toReactFlowOccurrenceNode(args: {
   occurrence: Occurrence;
   swimlaneRects: SwimlaneRect[];
   domainNodes: Record<string, DomainNode | undefined>;
+  diffMarkers?: NonNullable<VisualizationSnapshot['diffOverlay']>['nodesByCanonicalId'];
   interactionMode?: InteractionMode;
 }): Node<ReactFlowNodeData> {
   const visibleLane = toVisibleLane(args.occurrence.lane);
@@ -85,6 +87,7 @@ export function toReactFlowOccurrenceNode(args: {
       ),
       visibleLane,
       lockLevel,
+      diff: args.diffMarkers?.[args.occurrence.canonicalNodeId],
     },
   };
 

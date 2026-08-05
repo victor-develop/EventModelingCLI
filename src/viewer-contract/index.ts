@@ -18,6 +18,10 @@ export {
   VISIBLE_LANE_ORDER,
 } from './lanePolicy';
 export {
+  isSensitiveDiffPath,
+  redactDiffValue,
+} from './redaction';
+export {
   resolveNodeLaneMap,
 } from './laneAssignment';
 export {
@@ -27,4 +31,15 @@ export {
   normalizeRenderedEdgesForViewer,
 } from './normalize';
 export type { LaneDescriptor, SnapshotDirection, VisualizationSnapshot } from './types';
+export type {
+  DiffMarker,
+  DiffOverlay,
+  DiffStatus,
+  DraftContext,
+  FocusResolution,
+  SnapshotDiffMode,
+  SnapshotGraphMode,
+  ViewerDiffChange,
+  ViewerDiffEntityType,
+} from './types';
 export { VisualizationSnapshotError } from './types';

@@ -20,6 +20,7 @@ interface UseWalkStateOptions {
   walkHops?: number;
   maxHops?: number;
   includeTruncatedPaths?: boolean;
+  requestContext?: LayoutRequest | null;
 }
 
 interface DraftSnapshot {
@@ -37,6 +38,7 @@ export function useWalkState(
   const maxHops = options.maxHops ?? Math.max(WALK_LAYOUT_HOPS, options.walkHops ?? WALK_LAYOUT_HOPS);
   const walkHops = clampLayoutHops(options.walkHops ?? WALK_LAYOUT_HOPS, maxHops);
   const includeTruncatedPaths = options.includeTruncatedPaths ?? false;
+  const requestContext = options.requestContext ?? null;
   const snapshot = useMemo(() => (
     draft?.base === initData ? draft.snapshot : initData
   ), [draft, initData]);
@@ -56,9 +58,16 @@ export function useWalkState(
     const frontier = sorted[0];
     if (!frontier) return;
 
-    onNavigate(walkLayoutRequest(frontier.canonicalNodeId, direction, walkHops, includeTruncatedPaths, maxHops));
+    onNavigate(walkLayoutRequest(
+      frontier.canonicalNodeId,
+      direction,
+      walkHops,
+      includeTruncatedPaths,
+      maxHops,
+      requestContext,
+    ));
     setWalkCount(c => c + 1);
-  }, [includeTruncatedPaths, maxHops, onNavigate, snapshot, walkHops]);
+  }, [includeTruncatedPaths, maxHops, onNavigate, requestContext, snapshot, walkHops]);
 
   const walkRight = useCallback(() => { walk('forward'); }, [walk]);
   const walkLeft = useCallback(() => { walk('backward'); }, [walk]);

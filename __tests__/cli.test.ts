@@ -43,6 +43,17 @@ describe('Event Modeling CLI', () => {
       expect((r.data.project as any).name).toBe('Payments');
     });
 
+    test('restores the open draft when opening an existing project', () => {
+      em('project', 'init', 'Payments');
+      em('draft', 'start', '--n', 'working');
+      em('project', 'init', 'Other');
+
+      const r = em('project', 'open', 'proj_payments');
+
+      expect(r.ok).toBe(true);
+      expect(ws.getContext()!.draft?.id).toBe('draft_001');
+    });
+
     test('fails for missing project', () => {
       const r = em('project', 'open', 'nonexistent');
       expect(r.ok).toBe(false);
@@ -75,6 +86,168 @@ describe('Event Modeling CLI', () => {
       const submitResult = em('submit', '--m', 'Done');
       expect(submitResult.ok).toBe(true);
       expect((submitResult.data as any).newRevision).toBeDefined();
+    });
+
+    test('mutating commands require an active draft and do not advance counters', () => {
+      em('project', 'init', 'Test');
+      const mutatingCommands: string[][] = [
+        ['cmd', 'new', 'order.cmd.create-order'],
+        ['evt', 'new', 'order.evt.order-created'],
+        ['view', 'new', 'order.view.detail'],
+        ['proc', 'new', 'order.proc.worker'],
+        ['trigger', 'new', 'order.trigger.webhook'],
+        ['role', 'add', 'role.buyer'],
+        ['story', 'add', 'story', '--title', 'Create order'],
+        ['ui', 'add', 'screen', '--name', 'Order Detail'],
+        ['link', 'cmd->evt', 'order.cmd.create-order', 'order.evt.order-created'],
+        ['link', 'evt->view', 'order.evt.order-created', 'order.view.detail'],
+        ['ui', 'bind-view', '--ui', 'ui.screen.order-detail', '--view', 'order.view.detail'],
+        ['role', 'issues-cmd', '--role', 'role.buyer', '--via', 'ui.screen.order-detail', '--cmd', 'order.cmd.create-order'],
+        ['proc', 'bind-view', '--proc', 'order.proc.worker', '--view', 'order.view.detail'],
+        ['trigger', 'issues-cmd', '--trigger', 'order.trigger.webhook', '--cmd', 'order.cmd.create-order'],
+        ['story', 'bind', '--story', 'story.create-order', '--cmd', 'order.cmd.create-order'],
+        ['cmd', 'schema', 'init', 'order.cmd.create-order'],
+        ['cmd', 'field', 'add', 'order.cmd.create-order', '--field-id', 'orderId', '--name', 'orderId', '--type', 'string'],
+        ['cmd', 'field', 'edit', 'order.cmd.create-order', 'orderId', '--type', 'scalar.id'],
+        ['cmd', 'field', 'rm', 'order.cmd.create-order', 'orderId'],
+        ['evt', 'schema', 'init', 'order.evt.order-created'],
+        ['evt', 'field', 'add', 'order.evt.order-created', '--field-id', 'orderId', '--name', 'orderId', '--type', 'string'],
+        ['evt', 'field', 'edit', 'order.evt.order-created', 'orderId', '--type', 'scalar.id'],
+        ['evt', 'field', 'rm', 'order.evt.order-created', 'orderId'],
+        ['view', 'field', 'add', 'order.view.detail', '--field-id', 'f.order-id', '--name', 'orderId', '--type', 'string', '--from-event', 'order.evt.order-created', '--path', 'payload.orderId'],
+        ['view', 'field', 'edit', 'order.view.detail', 'f.order-id', '--nullable'],
+        ['view', 'field', 'rm', 'order.view.detail', 'f.order-id'],
+        ['story', 'suggest-bind', '--story', 'story.create-order', '--from-cmd', 'order.cmd.create-order'],
+        ['story', 'revise-bind', 'proposal_001', 'set-mode', '--mode', 'core'],
+        ['story', 'confirm-bind', '--story', 'story.create-order', '--proposal', 'proposal_001'],
+      ];
+
+      for (const args of mutatingCommands) {
+        const r = em(...args);
+        expect([args.join(' '), r.error?.code]).toEqual([args.join(' '), 'NO_DRAFT']);
+      }
+
+      const manifest = ws.getManifest()!;
+      expect(manifest.nodeCounter).toBe(0);
+      expect(manifest.edgeCounter).toBe(0);
+      expect(manifest.proposalCounter).toBe(0);
+      expect(ws.listNodes()).toHaveLength(0);
+      expect(ws.listEdges()).toHaveLength(0);
+      expect(ws.listCommandSchemas()).toHaveLength(0);
+      expect(ws.listEventSchemas()).toHaveLength(0);
+    });
+
+    test('draft start refuses to replace an open draft', () => {
+      em('project', 'init', 'Test');
+      const first = em('draft', 'start', '--n', 'first');
+      const second = em('draft', 'start', '--n', 'second');
+
+      expect(first.ok).toBe(true);
+      expect(second.ok).toBe(false);
+      expect(second.error?.code).toBe('DRAFT_ALREADY_OPEN');
+      expect(ws.getManifest()!.draftCounter).toBe(1);
+      expect(ws.getContext()!.draft?.id).toBe('draft_001');
+    });
+
+    test('successful mutations write versioned draft ops with snapshots', () => {
+      em('project', 'init', 'Test');
+      em('draft', 'start', '--n', 'tracked');
+
+      const r = em('cmd', 'new', 'order.cmd.create-order');
+
+      expect(r.ok).toBe(true);
+      const draft = ws.getContext()!.draft!;
+      expect(draft.ops).toHaveLength(1);
+      expect(draft.ops[0]).toEqual(expect.objectContaining({
+        version: 2,
+        action: 'add',
+        entityType: 'node',
+        entityId: 'order.cmd.create-order',
+        before: null,
+      }));
+      expect((draft.ops[0].after as any).canonicalId).toBe('order.cmd.create-order');
+      expect(draft.ops[0].transactionId).toBeTruthy();
+      expect(draft.ops[0].target?.nodeKind).toBe('cmd');
+    });
+
+    test('submit rejects invalid drafts without moving head revision', () => {
+      em('project', 'init', 'Test');
+      em('draft', 'start', '--n', 'invalid');
+      em('cmd', 'new', 'order.cmd.create-order');
+
+      const r = em('submit', '--m', 'invalid submit');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('VALIDATION_FAILED');
+      expect(ws.getManifest()!.headRevisionId).toBeNull();
+      expect(ws.getContext()!.draft?.status).toBe('open');
+    });
+
+    test('submit rejects drafts when head no longer matches draft base', () => {
+      em('project', 'init', 'Test');
+      em('draft', 'start', '--n', 'stale');
+      ws.updateManifest({ headRevisionId: 'rev_999' });
+
+      const r = em('submit', '--m', 'stale submit');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('DRAFT_BASE_MISMATCH');
+      expect(ws.getContext()!.draft?.status).toBe('open');
+    });
+
+    test('submit rejects drafts when recorded ops no longer match model files', () => {
+      em('project', 'init', 'Test');
+      em('draft', 'start', '--n', 'split');
+      em('cmd', 'new', 'order.cmd.create-order');
+      fs.rmSync(path.join(tmpDir, 'projects', 'test', 'nodes', 'order.cmd.create-order.yaml'));
+
+      const r = em('submit', '--m', 'split submit');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('DRAFT_MODEL_MISMATCH');
+      expect(ws.getContext()!.draft?.status).toBe('open');
+    });
+
+    test('submit rejects untracked live model additions outside draft ops', () => {
+      em('project', 'init', 'Test');
+      em('draft', 'start', '--n', 'manual');
+      ws.saveNode({
+        id: 'node_manual',
+        projectId: ws.getManifest()!.id,
+        kind: 'cmd',
+        canonicalId: 'manual.cmd.outside-change',
+        displayName: 'Outside Change',
+        tags: [],
+        domains: ['manual'],
+      });
+
+      const r = em('submit', '--m', 'manual submit');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('DRAFT_MODEL_MISMATCH');
+      expect(ws.getContext()!.draft?.status).toBe('open');
+    });
+
+    test('submit rejects untracked schema content changes outside draft ops', () => {
+      em('project', 'init', 'Test');
+      em('draft', 'start', '--n', 'manual schema');
+      em('view', 'new', 'order.view.order.detail');
+      ws.saveViewModelSchema({
+        viewModelNodeId: 'order.view.order.detail',
+        fields: [{
+          fieldId: 'f.manual',
+          name: 'manual',
+          type: 'string',
+          nullable: true,
+          source: { eventNodeId: 'order.evt.order.created', eventFieldPath: 'payload.manual' },
+        }],
+      });
+
+      const r = em('submit', '--m', 'manual schema submit');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('DRAFT_MODEL_MISMATCH');
+      expect(ws.getContext()!.draft?.status).toBe('open');
     });
   });
 
@@ -154,6 +327,15 @@ describe('Event Modeling CLI', () => {
       em('cmd', 'new', 'order.cmd.test-cmd');
       const r = em('cmd', 'new', 'order.cmd.test-cmd');
       expect(r.ok).toBe(false);
+    });
+
+    test('unsafe canonical ids are rejected before writing model files', () => {
+      const r = em('cmd', 'new', '../escape');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('INVALID_CANONICAL_ID');
+      expect(ws.getManifest()!.nodeCounter).toBe(0);
+      expect(ws.listNodes()).toHaveLength(0);
     });
   });
 
@@ -313,9 +495,137 @@ describe('Event Modeling CLI', () => {
     beforeEach(() => {
       em('project', 'init', 'Test');
       em('draft', 'start', '--n', 'working');
+      em('cmd', 'new', 'order.cmd.capture-charge');
       em('view', 'new', 'order.view.charge.detail');
       em('evt', 'new', 'order.evt.charge.succeeded');
       em('link', 'evt->view', 'order.evt.charge.succeeded', 'order.view.charge.detail');
+    });
+
+    test('cmd schema init and field add', () => {
+      const init = em('cmd', 'schema', 'init', 'order.cmd.capture-charge');
+      expect(init.ok).toBe(true);
+      expect((init.data as any).created).toBe(true);
+
+      const r = em('cmd', 'field', 'add', 'order.cmd.capture-charge', '--field-id', 'payment.id', '--name', 'paymentId', '--type', 'string');
+      expect(r.ok).toBe(true);
+      expect((r.data.field as any).fieldId).toBe('payment.id');
+      expect((r.data.field as any).required).toBe(true);
+    });
+
+    test('cmd field edit and rm', () => {
+      em('cmd', 'field', 'add', 'order.cmd.capture-charge', '--field-id', 'payment.id', '--name', 'paymentId', '--type', 'string');
+      const edit = em('cmd', 'field', 'edit', 'order.cmd.capture-charge', 'payment.id', '--type', 'scalar.id', '--optional');
+      expect(edit.ok).toBe(true);
+      expect((edit.data.field as any).type).toBe('scalar.id');
+      expect((edit.data.field as any).required).toBe(false);
+
+      const rm = em('cmd', 'field', 'rm', 'order.cmd.capture-charge', 'payment.id');
+      expect(rm.ok).toBe(true);
+      expect((rm.data as any).removedFieldId).toBe('payment.id');
+    });
+
+    test('cmd schema show', () => {
+      em('cmd', 'field', 'add', 'order.cmd.capture-charge', '--field-id', 'payment.id', '--name', 'paymentId', '--type', 'string');
+      const r = em('cmd', 'schema', 'show', 'order.cmd.capture-charge');
+      expect(r.ok).toBe(true);
+      expect(((r.data.input as any).fields as any[]).length).toBe(1);
+    });
+
+    test('evt schema init and field add', () => {
+      const init = em('evt', 'schema', 'init', 'order.evt.charge.succeeded');
+      expect(init.ok).toBe(true);
+      expect((init.data as any).created).toBe(true);
+
+      const r = em('evt', 'field', 'add', 'order.evt.charge.succeeded', '--field-id', 'payload.status', '--name', 'status', '--type', 'string', '--optional');
+      expect(r.ok).toBe(true);
+      expect((r.data.field as any).fieldId).toBe('payload.status');
+      expect((r.data.field as any).required).toBe(false);
+    });
+
+    test('evt field edit, rm, and schema show', () => {
+      em('evt', 'field', 'add', 'order.evt.charge.succeeded', '--field-id', 'status', '--name', 'status', '--type', 'string');
+      const edit = em('evt', 'field', 'edit', 'order.evt.charge.succeeded', 'status', '--description', 'Charge state');
+      expect(edit.ok).toBe(true);
+      expect((edit.data.field as any).description).toBe('Charge state');
+
+      const show = em('evt', 'schema', 'show', 'order.evt.charge.succeeded');
+      expect(show.ok).toBe(true);
+      expect(((show.data.payload as any).fields as any[]).length).toBe(1);
+
+      const rm = em('evt', 'field', 'rm', 'order.evt.charge.succeeded', 'status');
+      expect(rm.ok).toBe(true);
+      expect((rm.data as any).removedFieldId).toBe('status');
+    });
+
+    test('schema field add rejects duplicate field ids', () => {
+      em('evt', 'field', 'add', 'order.evt.charge.succeeded', '--field-id', 'status', '--name', 'status', '--type', 'string');
+      const r = em('evt', 'field', 'add', 'order.evt.charge.succeeded', '--field-id', 'status', '--name', 'status', '--type', 'string');
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('DUPLICATE');
+    });
+
+    test('validate reports orphan command schema files', () => {
+      const schemaDir = path.join(tmpDir, 'projects', 'test', 'schemas');
+      fs.mkdirSync(schemaDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(schemaDir, 'order.cmd.orphan.schema.yaml'),
+        [
+          'commandNodeId: order.cmd.orphan',
+          'version: 1',
+          'input:',
+          '  fields: []',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const r = em('validate');
+
+      expect(r.ok).toBe(true);
+      expect((r.data.errors as any[]).some(e => e.code === 'EMV-060' && e.details.schemaNodeId === 'order.cmd.orphan')).toBe(true);
+    });
+
+    test('draft diff includes schema field add edit and remove', () => {
+      em('cmd', 'field', 'add', 'order.cmd.capture-charge', '--field-id', 'payment.id', '--name', 'paymentId', '--type', 'string');
+      em('cmd', 'field', 'edit', 'order.cmd.capture-charge', 'payment.id', '--type', 'scalar.id');
+      em('cmd', 'field', 'rm', 'order.cmd.capture-charge', 'payment.id');
+      em('evt', 'field', 'add', 'order.evt.charge.succeeded', '--field-id', 'status', '--name', 'status', '--type', 'string');
+      em('evt', 'field', 'edit', 'order.evt.charge.succeeded', 'status', '--description', 'Charge state');
+      em('view', 'field', 'add', 'order.view.charge.detail', '--field-id', 'f.status', '--name', 'status', '--type', 'string', '--from-event', 'order.evt.charge.succeeded', '--path', 'payload.status');
+      em('view', 'field', 'edit', 'order.view.charge.detail', 'f.status', '--nullable');
+
+      const diff = em('draft', 'diff');
+
+      expect(diff.ok).toBe(true);
+      expect((diff.data.diff as any).fieldsAdded).toEqual(expect.arrayContaining([
+        'order.cmd.capture-charge#payment.id',
+        'order.evt.charge.succeeded#status',
+        'order.view.charge.detail#f.status',
+      ]));
+      expect((diff.data.diff as any).fieldsUpdated).toEqual(expect.arrayContaining([
+        'order.cmd.capture-charge#payment.id',
+        'order.evt.charge.succeeded#status',
+        'order.view.charge.detail#f.status',
+      ]));
+      expect((diff.data.diff as any).fieldsRemoved).toContain('order.cmd.capture-charge#payment.id');
+      expect((diff.data.diff as any).changes).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          action: 'edit',
+          entityType: 'schema',
+          entityId: 'order.cmd.capture-charge#payment.id',
+          before: expect.objectContaining({ type: 'string' }),
+          after: expect.objectContaining({ type: 'scalar.id' }),
+        }),
+      ]));
+    });
+
+    test('draft diff separates schema envelopes from schema fields', () => {
+      const diff = em('draft', 'diff');
+
+      expect(diff.ok).toBe(true);
+      expect((diff.data.diff as any).schemasAdded).toContain('order.view.charge.detail');
+      expect((diff.data.diff as any).fieldsAdded).not.toContain('order.view.charge.detail');
+      expect((diff.data.diff as any).summary.schemasAdded).toBeGreaterThan(0);
     });
 
     test('view field add', () => {
@@ -601,13 +911,13 @@ describe('Event Modeling CLI', () => {
     test('generates layout output for a graph', () => {
       em('project', 'init', 'Layout Test');
       em('draft', 'start', '--n', 'test');
-      em('cmd', 'new', 'hotel.cmd.BookRoom');
-      em('evt', 'new', 'hotel.evt.RoomBooked');
-      em('view', 'new', 'hotel.view.BookingSummary');
-      em('link', 'cmd->evt', 'hotel.cmd.BookRoom', 'hotel.evt.RoomBooked');
-      em('link', 'evt->view', 'hotel.evt.RoomBooked', 'hotel.view.BookingSummary');
+      em('cmd', 'new', 'hotel.cmd.book-room');
+      em('evt', 'new', 'hotel.evt.room.booked');
+      em('view', 'new', 'hotel.view.booking.summary');
+      em('link', 'cmd->evt', 'hotel.cmd.book-room', 'hotel.evt.room.booked');
+      em('link', 'evt->view', 'hotel.evt.room.booked', 'hotel.view.booking.summary');
 
-      const r = em('layout', '--focus', 'hotel.cmd.BookRoom');
+      const r = em('layout', '--focus', 'hotel.cmd.book-room');
       expect(r.ok).toBe(true);
       expect((r.data as any).layout).toBeDefined();
       expect((r.data as any).layout.nodes.length).toBeGreaterThanOrEqual(2);
@@ -615,8 +925,8 @@ describe('Event Modeling CLI', () => {
       expect((r.data as any).layout.viewport).toBeDefined();
 
       const nodes = (r.data as any).layout.nodes;
-      const cmd = nodes.find((n: any) => n.canonicalNodeId === 'hotel.cmd.BookRoom');
-      const evt = nodes.find((n: any) => n.canonicalNodeId === 'hotel.evt.RoomBooked');
+      const cmd = nodes.find((n: any) => n.canonicalNodeId === 'hotel.cmd.book-room');
+      const evt = nodes.find((n: any) => n.canonicalNodeId === 'hotel.evt.room.booked');
       expect(cmd).toBeDefined();
       expect(evt).toBeDefined();
       expect(cmd.stageIndex).toBe(1);
@@ -638,15 +948,15 @@ describe('Event Modeling CLI', () => {
     test('returns roots after adding nodes and edges', () => {
       em('project', 'init', 'Hotel');
       em('draft', 'start', '--n', 'test');
-      em('cmd', 'new', 'hotel.cmd.BookRoom');
-      em('cmd', 'new', 'hotel.cmd.CancelBooking');
-      em('evt', 'new', 'hotel.evt.RoomBooked');
-      em('link', 'cmd->evt', 'hotel.cmd.BookRoom', 'hotel.evt.RoomBooked');
+      em('cmd', 'new', 'hotel.cmd.book-room');
+      em('cmd', 'new', 'hotel.cmd.cancel-booking');
+      em('evt', 'new', 'hotel.evt.room.booked');
+      em('link', 'cmd->evt', 'hotel.cmd.book-room', 'hotel.evt.room.booked');
       const r = em('roots');
       expect(r.ok).toBe(true);
       const rootIds = ((r.data as any).roots as any[]).map((x: any) => x.canonicalId);
-      expect(rootIds).toContain('hotel.cmd.BookRoom');
-      expect(rootIds).toContain('hotel.cmd.CancelBooking');
+      expect(rootIds).toContain('hotel.cmd.book-room');
+      expect(rootIds).toContain('hotel.cmd.cancel-booking');
       expect((r.data as any).count).toBe(2);
     });
   });

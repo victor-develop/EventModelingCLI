@@ -8,7 +8,12 @@ import { readYamlFile, writeYamlFile, listYamlFiles, deleteFile } from '../fs-mo
 import {
   manifestPath, nodePath, edgePath, schemaPath, viewModelSchemaPath,
   revisionPath, draftPath, proposalPath, contextPath, ensureProjectDirs,
+  UnsafeProjectPathError,
 } from '../fs-model/path-conventions';
+
+function hasStringProperty(value: unknown, key: string): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && typeof (value as Record<string, unknown>)[key] === 'string');
+}
 
 export class Workspace {
   private baseDir: string;
@@ -72,7 +77,7 @@ export class Workspace {
         const projectDir = path.join(projectsDir, entry.name);
         ctx.activeProjectId = m.id;
         ctx.activeProjectDir = projectDir;
-        ctx.activeDraftId = undefined;
+        ctx.activeDraftId = findOpenDraftId(projectDir);
         this.writeContext(ctx);
         return m;
       }
@@ -168,7 +173,7 @@ export class Workspace {
   getNode(idOrCanonicalId: string): Node | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    const direct = readYamlFile<Node>(nodePath(dir, idOrCanonicalId));
+    const direct = safeReadYamlFile<Node>(() => nodePath(dir, idOrCanonicalId));
     if (direct) return direct;
     for (const f of listYamlFiles(path.join(dir, 'nodes'))) {
       const n = readYamlFile<Node>(f);
@@ -200,7 +205,7 @@ export class Workspace {
   getEdge(id: string): Edge | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<Edge>(edgePath(dir, id));
+    return safeReadYamlFile<Edge>(() => edgePath(dir, id));
   }
 
   listEdges(): Edge[] {
@@ -226,7 +231,15 @@ export class Workspace {
   getCommandSchema(cmdNodeId: string): CommandSchema | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<CommandSchema>(schemaPath(dir, cmdNodeId));
+    return safeReadYamlFile<CommandSchema>(() => schemaPath(dir, cmdNodeId));
+  }
+
+  listCommandSchemas(): CommandSchema[] {
+    const dir = this.getProjectDir();
+    if (!dir) return [];
+    return listYamlFiles(path.join(dir, 'schemas'))
+      .map(f => readYamlFile<unknown>(f))
+      .filter((schema): schema is CommandSchema => hasStringProperty(schema, 'commandNodeId'));
   }
 
   saveEventSchema(schema: EventSchema): void {
@@ -238,7 +251,15 @@ export class Workspace {
   getEventSchema(evtNodeId: string): EventSchema | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<EventSchema>(schemaPath(dir, evtNodeId));
+    return safeReadYamlFile<EventSchema>(() => schemaPath(dir, evtNodeId));
+  }
+
+  listEventSchemas(): EventSchema[] {
+    const dir = this.getProjectDir();
+    if (!dir) return [];
+    return listYamlFiles(path.join(dir, 'schemas'))
+      .map(f => readYamlFile<unknown>(f))
+      .filter((schema): schema is EventSchema => hasStringProperty(schema, 'eventNodeId'));
   }
 
   saveViewModelSchema(schema: ViewModelSchema): void {
@@ -250,7 +271,15 @@ export class Workspace {
   getViewModelSchema(viewNodeId: string): ViewModelSchema | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<ViewModelSchema>(viewModelSchemaPath(dir, viewNodeId));
+    return safeReadYamlFile<ViewModelSchema>(() => viewModelSchemaPath(dir, viewNodeId));
+  }
+
+  listViewModelSchemas(): ViewModelSchema[] {
+    const dir = this.getProjectDir();
+    if (!dir) return [];
+    return listYamlFiles(path.join(dir, 'view-model-schemas'))
+      .map(f => readYamlFile<unknown>(f))
+      .filter((schema): schema is ViewModelSchema => hasStringProperty(schema, 'viewModelNodeId'));
   }
 
   saveRevision(rev: Revision): void {
@@ -262,7 +291,7 @@ export class Workspace {
   getRevision(id: string): Revision | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<Revision>(revisionPath(dir, id));
+    return safeReadYamlFile<Revision>(() => revisionPath(dir, id));
   }
 
   listRevisions(): Revision[] {
@@ -283,7 +312,7 @@ export class Workspace {
   getDraft(id: string): Draft | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<Draft>(draftPath(dir, id));
+    return safeReadYamlFile<Draft>(() => draftPath(dir, id));
   }
 
   listDrafts(): Draft[] {
@@ -303,6 +332,30 @@ export class Workspace {
   getProposal(id: string): Proposal | null {
     const dir = this.getProjectDir();
     if (!dir) return null;
-    return readYamlFile<Proposal>(proposalPath(dir, id));
+    return safeReadYamlFile<Proposal>(() => proposalPath(dir, id));
   }
+
+  listProposals(): Proposal[] {
+    const dir = this.getProjectDir();
+    if (!dir) return [];
+    return listYamlFiles(path.join(dir, 'proposals'))
+      .map(f => readYamlFile<Proposal>(f))
+      .filter((proposal): proposal is Proposal => proposal !== null);
+  }
+}
+
+function safeReadYamlFile<T>(pathFactory: () => string): T | null {
+  try {
+    return readYamlFile<T>(pathFactory());
+  } catch (error) {
+    if (error instanceof UnsafeProjectPathError) return null;
+    throw error;
+  }
+}
+
+function findOpenDraftId(projectDir: string): string | undefined {
+  return listYamlFiles(path.join(projectDir, 'drafts'))
+    .map(f => readYamlFile<Draft>(f))
+    .find((draft): draft is Draft => draft?.status === 'open')
+    ?.id;
 }

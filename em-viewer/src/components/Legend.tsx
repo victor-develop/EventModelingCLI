@@ -15,6 +15,13 @@ export function Legend() {
           </div>
         );
       })}
+      <h3 className="legend-subtitle">Diff States</h3>
+      {(['added', 'changed', 'removed'] as const).map((status) => (
+        <div className="legend-item" key={status}>
+          <span className={`legend-diff-dot diff-${status}`} />
+          <span>{status}</span>
+        </div>
+      ))}
     </div>
   );
 }

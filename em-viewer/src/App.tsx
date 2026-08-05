@@ -1,16 +1,20 @@
 import './App.css';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { maxLayoutHopsForRoots, useGraphData } from './hooks/useGraphData';
 import { useWalkState } from './hooks/useWalkState';
 import { DEFAULT_LAYOUT_HOPS, MIN_LAYOUT_HOPS, clampLayoutHops } from './hooks/layoutRequest';
+import { readDiffSelectionFromLocation, writeDiffSelectionToLocation } from './hooks/diffSelectionUrl';
 import { Header } from './components/Header';
 import { Legend } from './components/Legend';
 import { WalkControls } from './components/WalkControls';
 import { FlowNavigator } from './components/FlowNavigator';
+import { DraftControls } from './components/DraftControls';
+import { DiffPanel } from './components/DiffPanel';
+import { DiffDrawer } from './components/DiffDrawer';
 import { XyflowCanvas } from './xyflow/components/XyflowCanvas';
 
 function App() {
-  const { data, rootsData, loading, switching, error, layoutRequest, navigateLayout, refocus } = useGraphData();
+  const { data, rootsData, draftsData, loading, switching, error, layoutRequest, navigateLayout, refocus } = useGraphData();
   const maxLayoutHops = maxLayoutHopsForRoots(rootsData);
   const currentHops = clampLayoutHops(layoutRequest?.hops ?? DEFAULT_LAYOUT_HOPS, maxLayoutHops);
   const {
@@ -28,8 +32,10 @@ function App() {
     walkHops: currentHops,
     maxHops: maxLayoutHops,
     includeTruncatedPaths: layoutRequest?.includeTruncatedPaths ?? false,
+    requestContext: layoutRequest,
   });
   const [navCollapsed, setNavCollapsed] = useState(false);
+  const [selectedDiffChangeIds, setSelectedDiffChangeIds] = useState<string[]>(() => readDiffSelectionFromLocation());
   const visibleSnapshot = walkSnapshot ?? data;
 
   const activeRootId = useMemo(() => visibleSnapshot?.focusNodeId ?? null, [visibleSnapshot]);
@@ -42,6 +48,37 @@ function App() {
   const projectName = useMemo(() => {
     return visibleSnapshot?.projectName ?? rootsData?.projectName ?? 'Event Modeling';
   }, [visibleSnapshot, rootsData]);
+
+  const diffChangesById = useMemo(() => {
+    const changes = [
+      ...(visibleSnapshot?.diffOverlay?.visibleChanges ?? []),
+      ...(visibleSnapshot?.diffOverlay?.hiddenChanges ?? []),
+    ];
+    return new Map(changes.map(change => [change.id, change]));
+  }, [visibleSnapshot?.diffOverlay]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setSelectedDiffChangeIds(readDiffSelectionFromLocation());
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (selectedDiffChangeIds.length === 0) return;
+    if (!visibleSnapshot) return;
+    if (!visibleSnapshot?.diffOverlay) {
+      setSelectedDiffChangeIds([]);
+      writeDiffSelectionToLocation([], 'replace');
+      return;
+    }
+    const available = selectedDiffChangeIds.filter(changeId => diffChangesById.has(changeId));
+    if (available.length !== selectedDiffChangeIds.length) {
+      setSelectedDiffChangeIds(available);
+      writeDiffSelectionToLocation(available, 'replace');
+    }
+  }, [diffChangesById, selectedDiffChangeIds, visibleSnapshot?.diffOverlay]);
 
   const handleWalkLeft = useCallback(() => {
     walkLeft();
@@ -65,6 +102,18 @@ function App() {
     if (!layoutRequest) return;
     navigateLayout({ ...layoutRequest, includeTruncatedPaths }, 'replace');
   }, [layoutRequest, navigateLayout]);
+
+  const handleSelectDiffChangeIds = useCallback((changeIds: string[]) => {
+    const available = changeIds.filter(changeId => diffChangesById.has(changeId));
+    if (available.length === 0) return;
+    setSelectedDiffChangeIds(available);
+    writeDiffSelectionToLocation(available, 'push');
+  }, [diffChangesById]);
+
+  const handleCloseDiffDrawer = useCallback(() => {
+    setSelectedDiffChangeIds([]);
+    writeDiffSelectionToLocation([], 'push');
+  }, []);
 
   if (loading) {
     return (
@@ -92,8 +141,18 @@ function App() {
 
   return (
     <>
-      <Header projectName={projectName} walkCount={walkCount} activeRootName={activeRootName} />
+      <Header
+        projectName={projectName}
+        walkCount={walkCount}
+        activeRootName={activeRootName}
+        draft={visibleSnapshot.draft}
+      />
       <Legend />
+      <DraftControls
+        draftsData={draftsData}
+        request={layoutRequest}
+        onNavigate={navigateLayout}
+      />
       {rootsData && rootsData.roots.length > 0 && (
         <FlowNavigator
           roots={rootsData.roots}
@@ -122,6 +181,18 @@ function App() {
         onOccurrenceReset={resetOccurrencePosition}
         onExploreLeft={handleWalkLeft}
         onExploreRight={handleWalkRight}
+        onDiffSelect={handleSelectDiffChangeIds}
+      />
+      <DiffPanel
+        snapshot={visibleSnapshot}
+        selectedChangeIds={selectedDiffChangeIds}
+        onSelectChangeIds={handleSelectDiffChangeIds}
+      />
+      <DiffDrawer
+        changeIds={selectedDiffChangeIds}
+        changesById={diffChangesById}
+        onSelectChangeIds={handleSelectDiffChangeIds}
+        onClose={handleCloseDiffDrawer}
       />
       {(switching || isWalking) && (
         <div className="switching-overlay">

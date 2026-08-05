@@ -40,7 +40,11 @@ function main() {
     console.log('  ctx                       Show current context');
     console.log('  draft start --n <name>    Start a new draft');
     console.log('  cmd new <id>              Create a command node');
+    console.log('  cmd schema init/show <id> Manage a command input schema');
+    console.log('  cmd field add/edit/rm     Manage command input fields');
     console.log('  evt new <id>              Create an event node');
+    console.log('  evt schema init/show <id> Manage an event payload schema');
+    console.log('  evt field add/edit/rm     Manage event payload fields');
     console.log('  view new <id>             Create a view model node');
     console.log('  proc new <id>             Create a processor node [--owner-role <roleId>]');
     console.log('  ui add <kind>             Add UI node [--owner-role <roleId>]');

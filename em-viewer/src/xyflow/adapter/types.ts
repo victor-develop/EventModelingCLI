@@ -1,11 +1,12 @@
 import type { Node as DomainNode } from '@em/domain/types';
-import type { VisualizationSnapshot } from '@em/viewer-contract/types';
+import type { DiffMarker, VisualizationSnapshot } from '@em/viewer-contract/types';
 
 export type ReactFlowNodeData = {
   canonicalNodeId: string;
   label: string;
   visibleLane: string;
   lockLevel: string;
+  diff?: DiffMarker;
 };
 
 export type SwimlaneNodeData = {
@@ -15,6 +16,7 @@ export type SwimlaneNodeData = {
 
 export type OrthogonalEdgeData = {
   kind: string;
+  diff?: DiffMarker;
 };
 
 export type FrontierHandleData = {

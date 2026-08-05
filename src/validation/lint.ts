@@ -21,6 +21,15 @@ export function lintCanonicalId(canonicalId: string, kind: NodeKind, existingIds
     });
   }
 
+  if (canonicalId.split('.').some(segment => segment.length === 0)) {
+    errors.push({
+      code: 'LINT-004',
+      message: `canonicalId "${canonicalId}" must not contain empty dot-separated segments`,
+      severity: 'error',
+      details: { canonicalId },
+    });
+  }
+
   if (existingIds.has(canonicalId)) {
     errors.push({
       code: 'LINT-002',

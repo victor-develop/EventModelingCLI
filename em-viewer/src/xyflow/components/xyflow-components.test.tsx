@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import { Position, ReactFlowProvider, type Node, type NodeProps } from '@xyflow/react';
 import type { ReactFlowNodeData, SwimlaneNodeData, FrontierHandleData } from '../adapter/types';
 import { SwimlaneGroupNode } from './SwimlaneGroupNode';
@@ -9,6 +10,38 @@ import { ViewModelNode } from './ViewModelNode';
 import { SharedNode } from './SharedNode';
 import { OrthogonalDisplayEdge } from './OrthogonalDisplayEdge';
 import { FrontierHandleNode } from './FrontierHandleNode';
+import { DiffSelectionProvider } from './DiffSelectionContext';
+
+vi.mock('@xyflow/react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@xyflow/react')>();
+  const { createPortal } = await import('react-dom');
+
+  return {
+    ...actual,
+    EdgeLabelRenderer: ({ children }: { children: ReactNode }) => {
+      const host = document.querySelector('.react-flow__edgelabel-renderer');
+      return host ? createPortal(children, host) : null;
+    },
+  };
+});
+
+const originalResizeObserver = globalThis.ResizeObserver;
+
+beforeAll(() => {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+
+afterAll(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
+});
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('xyflow components', () => {
   test('renders a swimlane group label', () => {
@@ -116,6 +149,37 @@ describe('xyflow components', () => {
     expect(screen.getByText('Buyer')).toHaveClass('em-role-marker-label');
   });
 
+  test('opens all node diff changes from the node diff chip', () => {
+    const onDiffSelect = vi.fn();
+    render(
+      <ReactFlowProvider>
+        <DiffSelectionProvider onSelect={onDiffSelect}>
+          <CommandNode
+            {...({
+              id: 'occ-cmd-submit-order',
+              type: 'em.cmd',
+              selected: false,
+              data: {
+                canonicalNodeId: 'cmd.submit-order',
+                label: 'Submit Order',
+                visibleLane: 'commandViewModel',
+                lockLevel: 'none',
+                diff: {
+                  status: 'changed',
+                  changeIds: ['node:cmd.submit-order', 'schema:command:cmd.submit-order'],
+                },
+              },
+            } as unknown as NodeProps<Node<ReactFlowNodeData>>)}
+          />
+        </DiffSelectionProvider>
+      </ReactFlowProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText('changed change for cmd.submit-order'));
+
+    expect(onDiffSelect).toHaveBeenCalledWith(['node:cmd.submit-order', 'schema:command:cmd.submit-order']);
+  });
+
   test('renders an orthogonal edge with BaseEdge smooth-step path', () => {
     const { container } = render(
       <svg>
@@ -143,6 +207,101 @@ describe('xyflow components', () => {
     expect(path?.getAttribute('d')).toContain('M10 20');
     expect(path).toHaveAttribute('marker-end', 'url(#edge-arrow)');
     expect(container.querySelector('path.react-flow__edge-interaction')).toBeInTheDocument();
+  });
+
+  test.each([
+    ['added', 'M -5 0 L 5 0'],
+    ['changed', 'M -5 2 L -2 -3 L 2 3 L 5 -2'],
+    ['removed', 'M -4 -4 L 4 4'],
+  ] as const)('renders a visible %s diff marker through the React Flow edge label renderer', (status, expectedGlyph) => {
+    const labelHost = document.createElement('div');
+    labelHost.className = 'react-flow__edgelabel-renderer';
+    document.body.appendChild(labelHost);
+
+    const { container, unmount } = render(
+      <svg>
+        <OrthogonalDisplayEdge
+          {...({
+            id: `edge-${status}`,
+            source: 'occ-cmd',
+            target: 'occ-evt',
+            selected: false,
+            sourceX: 10,
+            sourceY: 20,
+            targetX: 80,
+            targetY: 60,
+            sourcePosition: Position.Right,
+            targetPosition: Position.Left,
+            markerEnd: 'url(#edge-arrow)',
+            data: {
+              kind: 'cmd-to-evt',
+              diff: { status, changeIds: [`edge:${status}`] },
+            },
+          } as unknown as Parameters<typeof OrthogonalDisplayEdge>[0])}
+        />
+      </svg>,
+    );
+
+    try {
+      const marker = screen.getByLabelText(`${status} edge`);
+      expect(marker).toBeInTheDocument();
+      expect(marker).toHaveClass('em-edge-diff-marker', `diff-${status}`, 'nopan', 'nodrag');
+      expect(marker.getAttribute('style')).toContain('translate(-50%, -50%) translate(');
+      expect(marker.closest('.react-flow__edgelabel-renderer')).toBe(labelHost);
+      expect(marker.querySelector('circle')).toBeInTheDocument();
+      expect([...marker.querySelectorAll('path')].some((path) => path.getAttribute('d') === expectedGlyph)).toBe(true);
+      expect(container.querySelector(`path.em-edge-path.diff-${status}`)).toBeInTheDocument();
+    } finally {
+      unmount();
+      labelHost.remove();
+    }
+  });
+
+  test('opens all edge diff changes from the marker and edge path', () => {
+    const labelHost = document.createElement('div');
+    labelHost.className = 'react-flow__edgelabel-renderer';
+    document.body.appendChild(labelHost);
+    const onDiffSelect = vi.fn();
+
+    const { container, unmount } = render(
+      <DiffSelectionProvider onSelect={onDiffSelect}>
+        <svg>
+          <OrthogonalDisplayEdge
+            {...({
+              id: 'edge-changed',
+              source: 'occ-cmd',
+              target: 'occ-evt',
+              selected: false,
+              sourceX: 10,
+              sourceY: 20,
+              targetX: 80,
+              targetY: 60,
+              sourcePosition: Position.Right,
+              targetPosition: Position.Left,
+              markerEnd: 'url(#edge-arrow)',
+              data: {
+                kind: 'cmd-to-evt',
+                diff: {
+                  status: 'changed',
+                  changeIds: ['edge:edge_32', 'schema:viewModel:returns.view.return.detail'],
+                },
+              },
+            } as unknown as Parameters<typeof OrthogonalDisplayEdge>[0])}
+          />
+        </svg>
+      </DiffSelectionProvider>,
+    );
+
+    try {
+      fireEvent.click(screen.getByLabelText('changed edge'));
+      fireEvent.click(container.querySelector('path.em-edge-path.diff-changed')!);
+
+      expect(onDiffSelect).toHaveBeenNthCalledWith(1, ['edge:edge_32', 'schema:viewModel:returns.view.return.detail']);
+      expect(onDiffSelect).toHaveBeenNthCalledWith(2, ['edge:edge_32', 'schema:viewModel:returns.view.return.detail']);
+    } finally {
+      unmount();
+      labelHost.remove();
+    }
   });
 
   test('renders a frontier handle node', () => {

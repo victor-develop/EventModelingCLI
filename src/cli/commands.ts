@@ -1,5 +1,8 @@
 import { Workspace } from '../workspace/workspace';
-import { CLIResult, okResult, errResult, Node, Draft, Proposal, DraftOp, EdgeType } from '../domain/types';
+import {
+  CLIResult, okResult, errResult, Node, Draft, Proposal, EdgeType,
+  CommandSchema, EventSchema, CommandField, EventField,
+} from '../domain/types';
 import { toEventModelingEdges } from '../domain/event-modeling-edges';
 import { createRoleNode } from '../domain/roles';
 import { buildGraph, getNeighbors, walkGraph, tracePath, toMermaid, NeighborResult, resolveNodeId, findRoots } from '../graph/graph-builder';
@@ -8,6 +11,16 @@ import { validate } from '../validation/validate';
 import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
 import type { SnapshotDirection } from '../viewer-contract';
 import { renderLayoutAscii, renderLayoutTable } from '../terminal-viewer';
+import { MutationRunner, requireMutationRunner } from '../drafts/mutation-runner';
+import { buildSemanticDiff } from '../drafts/diff';
+import {
+  compareModelSnapshots,
+  currentModelFingerprint,
+  currentModelSnapshot,
+  modelSnapshotFingerprint,
+  projectDraftSnapshot,
+  snapshot,
+} from '../drafts/projection';
 
 function requireProject(ws: Workspace): { manifest: ReturnType<Workspace['getManifest']>; dir: string } | CLIResult {
   const manifest = ws.getManifest();
@@ -27,23 +40,108 @@ function isDraftResult(r: ReturnType<typeof requireDraft>): r is { draft: Draft 
   return 'draft' in r;
 }
 
-function addDraftOp(ws: Workspace, op: string, entityType: 'node' | 'edge' | 'schema', entityId: string, details?: Record<string, unknown>): void {
-  const ctx = ws.getContext();
-  if (!ctx?.draft || ctx.draft.status !== 'open') return;
-  const draft = ctx.draft;
-  draft.ops.push({
-    op,
-    entityType,
-    entityId,
-    timestamp: new Date().toISOString(),
-    details,
-  });
-  ws.saveDraft(draft);
+function mutationRunnerOrResult(ws: Workspace, commandName: string): MutationRunner | CLIResult {
+  return requireMutationRunner(ws, commandName);
 }
 
 function resolveNodeArg(ws: Workspace, idOrCanonical: string): string | null {
   const node = ws.getNode(idOrCanonical);
   return node?.canonicalId ?? null;
+}
+
+function requireNodeKind(ws: Workspace, commandName: string, idOrCanonical: string, kind: Node['kind'], label: string): Node | CLIResult {
+  const node = ws.getNode(idOrCanonical);
+  if (!node) return errResult(commandName, 'NOT_FOUND', `${label} "${idOrCanonical}" not found`);
+  if (node.kind !== kind) {
+    return errResult(commandName, 'INVALID_NODE_KIND', `${label} "${idOrCanonical}" must be a ${kind} node`, {
+      details: {
+        nodeId: node.canonicalId,
+        actualKind: node.kind,
+        expectedKind: kind,
+      },
+    });
+  }
+  return node;
+}
+
+function validateFieldInput(commandName: string, fieldId: string, name: string, type: string): CLIResult | null {
+  if (!fieldId || !name || !type) {
+    return errResult(commandName, 'INVALID_ARGUMENT', 'Schema fields require --field-id, --name, and --type');
+  }
+  if (!/^[A-Za-z][A-Za-z0-9._-]*$/.test(fieldId)) {
+    return errResult(commandName, 'INVALID_ARGUMENT', `Invalid field id "${fieldId}"`, { details: { fieldId } });
+  }
+  if (name.length > 120 || type.length > 120) {
+    return errResult(commandName, 'INVALID_ARGUMENT', 'Field name and type must be 120 characters or fewer');
+  }
+  return null;
+}
+
+function requiredFromFlags(commandName: string, flags: Record<string, unknown>, defaultValue: boolean): boolean | CLIResult {
+  const hasRequired = Object.prototype.hasOwnProperty.call(flags, 'required');
+  const hasOptional = Object.prototype.hasOwnProperty.call(flags, 'optional');
+  if (hasRequired && hasOptional) {
+    return errResult(commandName, 'INVALID_ARGUMENT', 'Use either --required or --optional, not both');
+  }
+  if (hasOptional) return false;
+  if (hasRequired) {
+    const value = flags.required;
+    return value === false || value === 'false' || value === '0' ? false : true;
+  }
+  return defaultValue;
+}
+
+function isCliResult(value: unknown): value is CLIResult {
+  return Boolean(value && typeof value === 'object' && 'ok' in value);
+}
+
+function withWarnings(result: CLIResult, warnings: string[]): CLIResult {
+  result.warnings.push(...warnings);
+  return result;
+}
+
+function requireNewNodeCanonicalId(ws: Workspace, commandName: string, canonicalId: string, kind: Node['kind']): { warnings: string[] } | CLIResult {
+  const existingIds = new Set(ws.listNodes().map(n => n.canonicalId));
+  const lintErrors = lintCanonicalId(canonicalId, kind, existingIds);
+  const blocking = lintErrors.filter(e => ['LINT-001', 'LINT-004'].includes(e.code));
+  if (blocking.length > 0) {
+    return errResult(commandName, 'INVALID_CANONICAL_ID', blocking.map(e => e.message).join('; '), {
+      projectId: ws.getManifest()?.id,
+      details: { errors: blocking },
+    });
+  }
+  return { warnings: lintErrors.map(e => e.message) };
+}
+
+function currentHeadBaseRevisionId(manifest: { headRevisionId: string | null }): string {
+  return manifest.headRevisionId ?? 'rev_000';
+}
+
+function parentRevisionIdFromDraftBase(baseRevisionId: string): string | null {
+  return baseRevisionId === 'rev_000' ? null : baseRevisionId;
+}
+
+function validateDraftMatchesModel(ws: Workspace, draft: Draft): CLIResult | null {
+  if (!draft.baseSnapshot) {
+    return errResult('em submit', 'DRAFT_BASE_SNAPSHOT_MISSING', 'Draft cannot be safely submitted because it has no base model snapshot', {
+      projectId: ws.getManifest()?.id,
+      draftId: draft.id,
+    });
+  }
+
+  const expected = projectDraftSnapshot(draft.baseSnapshot, draft.ops);
+  const actual = currentModelSnapshot(ws);
+  const mismatches = compareModelSnapshots(expected, actual);
+  if (mismatches.length === 0) return null;
+  return errResult('em submit', 'DRAFT_MODEL_MISMATCH', 'Draft ops plus base snapshot no longer match the current model files', {
+    projectId: ws.getManifest()?.id,
+    draftId: draft.id,
+    details: {
+      expectedFingerprint: modelSnapshotFingerprint(expected),
+      actualFingerprint: modelSnapshotFingerprint(actual),
+      mismatches: mismatches.slice(0, 50),
+    },
+  });
 }
 
 export function projectInit(ws: Workspace, name: string): CLIResult {
@@ -96,11 +194,20 @@ export function draftStart(ws: Workspace, message: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
   const manifest = ws.getManifest()!;
+  const openDraft = ws.listDrafts().find(d => d.status === 'open');
+  if (openDraft) {
+    return errResult('em draft start', 'DRAFT_ALREADY_OPEN', `Draft "${openDraft.id}" is already open`, {
+      projectId: manifest.id,
+      draftId: openDraft.id,
+    });
+  }
   const draftId = ws.generateDraftId();
   const draft: Draft = {
     id: draftId,
     projectId: manifest.id,
-    baseRevisionId: manifest.headRevisionId ?? 'rev_000',
+    baseRevisionId: currentHeadBaseRevisionId(manifest),
+    baseContentFingerprint: currentModelFingerprint(ws),
+    baseSnapshot: currentModelSnapshot(ws),
     status: 'open',
     message,
     ops: [],
@@ -124,13 +231,10 @@ export function draftStatus(ws: Workspace): CLIResult {
   const dr = requireDraft(ws);
   if (!isDraftResult(dr)) return dr.error;
   const draft = dr.draft;
-  const nodesAdded = draft.ops.filter((o: DraftOp) => o.op === 'add' && o.entityType === 'node').length;
-  const nodesUpdated = draft.ops.filter((o: DraftOp) => o.op === 'update' && o.entityType === 'node').length;
-  const edgesAdded = draft.ops.filter((o: DraftOp) => o.op === 'add' && o.entityType === 'edge').length;
-  const fieldsAdded = draft.ops.filter((o: DraftOp) => o.op === 'add' && o.entityType === 'schema').length;
+  const diff = buildSemanticDiff(draft);
   return okResult('em draft status', {
     draft: { id: draft.id, status: draft.status, baseRevisionId: draft.baseRevisionId },
-    summary: { nodesAdded, nodesUpdated, edgesAdded, fieldsAdded },
+    summary: diff.summary,
   }, { projectId: ws.getManifest()!.id, draftId: draft.id });
 }
 
@@ -140,11 +244,8 @@ export function draftDiff(ws: Workspace, format: string = 'json'): CLIResult {
   const dr = requireDraft(ws);
   if (!isDraftResult(dr)) return dr.error;
   const draft = dr.draft;
-  const nodesAdded = draft.ops.filter((o: DraftOp) => o.op === 'add' && o.entityType === 'node').map((o: DraftOp) => o.entityId);
-  const nodesUpdated = draft.ops.filter((o: DraftOp) => o.op === 'update' && o.entityType === 'node').map((o: DraftOp) => o.entityId);
-  const edgesAdded = draft.ops.filter((o: DraftOp) => o.op === 'add' && o.entityType === 'edge').map((o: DraftOp) => o.entityId);
-  const fieldsAdded = draft.ops.filter((o: DraftOp) => o.op === 'add' && o.entityType === 'schema').map((o: DraftOp) => o.entityId);
-  const diffData: Record<string, unknown> = { nodesAdded, nodesUpdated, edgesAdded, fieldsAdded };
+  const semanticDiff = buildSemanticDiff(draft);
+  const diffData: Record<string, unknown> = { ...semanticDiff };
   if (format === 'mermaid') {
     const nodes = ws.listNodes();
     const edges = ws.listEdges();
@@ -164,24 +265,54 @@ export function submit(ws: Workspace, message: string): CLIResult {
   if (!isDraftResult(dr)) return dr.error;
   const draft = dr.draft;
   const manifest = ws.getManifest()!;
-  draft.status = 'submitted';
-  ws.saveDraft(draft);
+  const currentBaseRevisionId = currentHeadBaseRevisionId(manifest);
+  if (currentBaseRevisionId !== draft.baseRevisionId) {
+    return errResult('em submit', 'DRAFT_BASE_MISMATCH', `Draft "${draft.id}" was based on ${draft.baseRevisionId}, but current head is ${currentBaseRevisionId}`, {
+      projectId: manifest.id,
+      draftId: draft.id,
+      details: { draftBaseRevisionId: draft.baseRevisionId, currentHeadRevisionId: currentBaseRevisionId },
+    });
+  }
+  const consistencyError = validateDraftMatchesModel(ws, draft);
+  if (consistencyError) return consistencyError;
+  const nodes = ws.listNodes();
+  const edges = ws.listEdges();
+  const vmSchemas = nodes
+    .filter(n => n.kind === 'viewModel')
+    .map(n => ws.getViewModelSchema(n.canonicalId))
+    .filter((schema): schema is import('../domain/types').ViewModelSchema => schema !== null);
+  const validationErrors = validate(nodes, edges, vmSchemas, ws.listCommandSchemas(), ws.listEventSchemas());
+  if (validationErrors.length > 0) {
+    return errResult('em submit', 'VALIDATION_FAILED', 'Draft cannot be submitted until validation passes', {
+      projectId: manifest.id,
+      draftId: draft.id,
+      details: { errors: validationErrors.map(e => ({ code: e.code, message: e.message, details: e.details })) },
+    });
+  }
+  const semanticDiff = buildSemanticDiff(draft);
   const revId = ws.generateRevisionId();
   const revision = {
     id: revId,
     projectId: manifest.id,
-    parentRevisionId: manifest.headRevisionId,
+    parentRevisionId: parentRevisionIdFromDraftBase(draft.baseRevisionId),
     message,
     createdAt: new Date().toISOString(),
     author: 'user',
+    submittedDraftId: draft.id,
+    validation: { valid: true, errorCount: 0 },
+    diffSummary: semanticDiff.summary,
+    contentFingerprint: currentModelFingerprint(ws),
   };
   ws.saveRevision(revision);
   ws.updateManifest({ headRevisionId: revId });
+  draft.status = 'submitted';
+  ws.saveDraft(draft);
   ws.setActiveDraft('');
   ws.setCheckedOutRevision(revId);
   return okResult('em submit', {
     submittedDraftId: draft.id,
     newRevision: { id: revId, message },
+    diff: { summary: semanticDiff.summary },
   }, { projectId: manifest.id, draftId: draft.id, revisionId: revId });
 }
 
@@ -209,11 +340,13 @@ export function checkout(ws: Workspace, revId: string): CLIResult {
 export function cmdNew(ws: Workspace, canonicalId: string, displayName?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em cmd new');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em cmd new', canonicalId, 'cmd');
+  if (isCliResult(idCheck)) return idCheck;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em cmd new', 'DUPLICATE', `Node "${canonicalId}" already exists`);
-  const lintErrors = lintCanonicalId(canonicalId, 'cmd', new Set(ws.listNodes().map(n => n.canonicalId)));
-  const warnings = lintErrors.map(e => e.message);
   const id = ws.generateNodeId();
   const node: Node = {
     id,
@@ -224,22 +357,22 @@ export function cmdNew(ws: Workspace, canonicalId: string, displayName?: string)
     tags: [],
     domains: extractDomains(canonicalId),
   };
-  ws.saveNode(node);
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em cmd new', {
+  mutation.saveNode(node);
+  return withWarnings(okResult('em cmd new', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 export function evtNew(ws: Workspace, canonicalId: string, displayName?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em evt new');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em evt new', canonicalId, 'evt');
+  if (isCliResult(idCheck)) return idCheck;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em evt new', 'DUPLICATE', `Node "${canonicalId}" already exists`);
-  const lintErrors = lintCanonicalId(canonicalId, 'evt', new Set(ws.listNodes().map(n => n.canonicalId)));
-  const warnings = lintErrors.map(e => e.message);
   const id = ws.generateNodeId();
   const node: Node = {
     id,
@@ -250,22 +383,22 @@ export function evtNew(ws: Workspace, canonicalId: string, displayName?: string)
     tags: [],
     domains: extractDomains(canonicalId),
   };
-  ws.saveNode(node);
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em evt new', {
+  mutation.saveNode(node);
+  return withWarnings(okResult('em evt new', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 export function viewNew(ws: Workspace, canonicalId: string, displayName?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em view new');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em view new', canonicalId, 'viewModel');
+  if (isCliResult(idCheck)) return idCheck;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em view new', 'DUPLICATE', `Node "${canonicalId}" already exists`);
-  const lintErrors = lintCanonicalId(canonicalId, 'viewModel', new Set(ws.listNodes().map(n => n.canonicalId)));
-  const warnings = lintErrors.map(e => e.message);
   const id = ws.generateNodeId();
   const node: Node = {
     id,
@@ -276,13 +409,11 @@ export function viewNew(ws: Workspace, canonicalId: string, displayName?: string
     tags: [],
     domains: extractDomains(canonicalId),
   };
-  ws.saveNode(node);
-  ws.saveViewModelSchema({ viewModelNodeId: canonicalId, fields: [] });
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em view new', {
+  mutation.saveNode(node);
+  mutation.saveViewModelSchema({ viewModelNodeId: canonicalId, fields: [] }, 'add', null, { viewModelNodeId: canonicalId, fields: [] });
+  return withWarnings(okResult('em view new', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 function resolveOwnerRole(ws: Workspace, ownerRole: string | undefined): string | undefined {
@@ -293,17 +424,13 @@ function resolveOwnerRole(ws: Workspace, ownerRole: string | undefined): string 
 export function roleAdd(ws: Workspace, canonicalId: string, displayName?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em role add');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em role add', canonicalId, 'role');
+  if (isCliResult(idCheck)) return idCheck;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em role add', 'DUPLICATE', `Node "${canonicalId}" already exists`);
-  const lintErrors = lintCanonicalId(canonicalId, 'role', new Set(ws.listNodes().map(n => n.canonicalId)));
-  const blocking = lintErrors.filter(e => e.severity === 'error');
-  if (blocking.length > 0) {
-    return errResult('em role add', 'INVALID_CANONICAL_ID', blocking.map(e => e.message).join('; '), {
-      projectId: manifest.id,
-      details: { errors: blocking },
-    });
-  }
 
   const node = createRoleNode({
     id: ws.generateNodeId(),
@@ -311,15 +438,13 @@ export function roleAdd(ws: Workspace, canonicalId: string, displayName?: string
     canonicalId,
     displayName,
   });
-  ws.saveNode(node);
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em role add', {
+  mutation.saveNode(node);
+  return withWarnings(okResult('em role add', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
-function ensureRoleNode(ws: Workspace, roleId: string, commandName: string): Node | CLIResult {
+function ensureRoleNode(ws: Workspace, mutation: MutationRunner, roleId: string, commandName: string): Node | CLIResult {
   if (!roleId) {
     return errResult(commandName, 'MISSING_ROLE', 'Role id is required');
   }
@@ -336,33 +461,26 @@ function ensureRoleNode(ws: Workspace, roleId: string, commandName: string): Nod
   }
 
   const manifest = ws.getManifest()!;
-  const lintErrors = lintCanonicalId(roleId, 'role', new Set(ws.listNodes().map(n => n.canonicalId)));
-  const blocking = lintErrors.filter(e => e.severity === 'error');
-  if (blocking.length > 0) {
-    return errResult(commandName, 'INVALID_CANONICAL_ID', blocking.map(e => e.message).join('; '), {
-      projectId: manifest.id,
-      details: { errors: blocking },
-    });
-  }
+  const idCheck = requireNewNodeCanonicalId(ws, commandName, roleId, 'role');
+  if (isCliResult(idCheck)) return idCheck;
 
   const roleNode = createRoleNode({
     id: ws.generateNodeId(),
     projectId: manifest.id,
     canonicalId: roleId,
   });
-  ws.saveNode(roleNode);
-  addDraftOp(ws, 'add', 'node', roleNode.canonicalId);
+  mutation.saveNode(roleNode);
   return roleNode;
-}
-
-function isCliResult(value: Node | CLIResult): value is CLIResult {
-  return 'ok' in value;
 }
 
 export function procNew(ws: Workspace, canonicalId: string, ownerRole?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em proc new');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em proc new', canonicalId, 'proc');
+  if (isCliResult(idCheck)) return idCheck;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em proc new', 'DUPLICATE', `Node "${canonicalId}" already exists`);
   const resolvedOwnerRole = resolveOwnerRole(ws, ownerRole);
@@ -377,18 +495,20 @@ export function procNew(ws: Workspace, canonicalId: string, ownerRole?: string):
     domains: extractDomains(canonicalId),
     ...(resolvedOwnerRole ? { ownerRole: resolvedOwnerRole } : {}),
   };
-  ws.saveNode(node);
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em proc new', {
+  mutation.saveNode(node);
+  return withWarnings(okResult('em proc new', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, ownerRole: node.ownerRole },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 export function triggerNew(ws: Workspace, canonicalId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em trigger new');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em trigger new', canonicalId, 'trigger');
+  if (isCliResult(idCheck)) return idCheck;
   const existing = ws.getNode(canonicalId);
   if (existing) return errResult('em trigger new', 'DUPLICATE', `Node "${canonicalId}" already exists`);
   const id = ws.generateNodeId();
@@ -401,21 +521,23 @@ export function triggerNew(ws: Workspace, canonicalId: string): CLIResult {
     tags: [],
     domains: extractDomains(canonicalId),
   };
-  ws.saveNode(node);
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em trigger new', {
+  mutation.saveNode(node);
+  return withWarnings(okResult('em trigger new', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 export function storyAdd(ws: Workspace, level: string, title: string, parentId?: string, roleId?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em story add');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const kind = `story.${level}` as Node['kind'];
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const canonicalId = `story.${slug}`;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em story add', canonicalId, kind);
+  if (isCliResult(idCheck)) return idCheck;
   const id = ws.generateNodeId();
   const node: Node = {
     id,
@@ -427,23 +549,20 @@ export function storyAdd(ws: Workspace, level: string, title: string, parentId?:
     domains: [],
     role: roleId,
   };
-  ws.saveNode(node);
+  mutation.saveNode(node);
   if (parentId) {
     const edgeId = ws.generateEdgeId();
-    ws.saveEdge({
+    mutation.saveEdge({
       id: edgeId,
       projectId: manifest.id,
       type: 'parentOf',
       fromNodeId: parentId,
       toNodeId: canonicalId,
     });
-    addDraftOp(ws, 'add', 'edge', edgeId);
   }
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em story add', {
+  return withWarnings(okResult('em story add', {
     node: { id: node.id, kind: node.kind, canonicalId: node.canonicalId, displayName: node.displayName },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 export function storyTree(ws: Workspace): CLIResult {
@@ -475,10 +594,14 @@ export function storyTree(ws: Workspace): CLIResult {
 export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: string, ownerRole?: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em ui add');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const kind = `ui.${uiKind}` as Node['kind'];
   const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const canonicalId = `ui.${uiKind}.${slug}`;
+  const idCheck = requireNewNodeCanonicalId(ws, 'em ui add', canonicalId, kind);
+  if (isCliResult(idCheck)) return idCheck;
   const resolvedOwnerRole = resolveOwnerRole(ws, ownerRole);
   const id = ws.generateNodeId();
   const node: Node = {
@@ -491,21 +614,18 @@ export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: st
     domains: [],
     ...(resolvedOwnerRole ? { ownerRole: resolvedOwnerRole } : {}),
   };
-  ws.saveNode(node);
+  mutation.saveNode(node);
   if (parentId) {
     const edgeId = ws.generateEdgeId();
-    ws.saveEdge({
+    mutation.saveEdge({
       id: edgeId,
       projectId: manifest.id,
       type: 'parentOf',
       fromNodeId: parentId,
       toNodeId: canonicalId,
     });
-    addDraftOp(ws, 'add', 'edge', edgeId);
   }
-  addDraftOp(ws, 'add', 'node', canonicalId);
-  const ctx = ws.getContext();
-  return okResult('em ui add', {
+  return withWarnings(okResult('em ui add', {
     node: {
       id: node.id,
       kind: node.kind,
@@ -513,7 +633,7 @@ export function uiAdd(ws: Workspace, uiKind: string, name: string, parentId?: st
       displayName: node.displayName,
       ownerRole: node.ownerRole,
     },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId }), idCheck.warnings);
 }
 
 export function uiTree(ws: Workspace): CLIResult {
@@ -545,6 +665,8 @@ export function uiTree(ws: Workspace): CLIResult {
 export function linkCmdEvt(ws: Workspace, cmdId: string, evtId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em link cmd->evt');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const cmd = ws.getNode(cmdId);
   if (!cmd) return errResult('em link cmd->evt', 'NOT_FOUND', `Command "${cmdId}" not found`);
@@ -558,17 +680,17 @@ export function linkCmdEvt(ws: Workspace, cmdId: string, evtId: string): CLIResu
     fromNodeId: cmd.canonicalId,
     toNodeId: evt.canonicalId,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult('em link cmd->evt', {
     edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 export function linkEvtView(ws: Workspace, evtId: string, viewModelId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em link evt->view');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const evt = ws.getNode(evtId);
   if (!evt) return errResult('em link evt->view', 'NOT_FOUND', `Event "${evtId}" not found`);
@@ -582,17 +704,17 @@ export function linkEvtView(ws: Workspace, evtId: string, viewModelId: string): 
     fromNodeId: evt.canonicalId,
     toNodeId: view.canonicalId,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult('em link evt->view', {
     edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 export function uiBindView(ws: Workspace, uiId: string, viewModelId: string, fields?: string[]): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em ui bind-view');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const ui = ws.getNode(uiId);
   if (!ui) return errResult('em ui bind-view', 'NOT_FOUND', `UI "${uiId}" not found`);
@@ -611,9 +733,7 @@ export function uiBindView(ws: Workspace, uiId: string, viewModelId: string, fie
     toNodeId: ui.canonicalId,
     meta: Object.keys(meta).length > 0 ? meta : undefined,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult('em ui bind-view', {
     edge: {
       id: edge.id,
@@ -622,7 +742,7 @@ export function uiBindView(ws: Workspace, uiId: string, viewModelId: string, fie
       toNodeId: edge.toNodeId,
       meta: edge.meta ?? {},
     },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 function createRoleIssuesCommand(
@@ -634,6 +754,8 @@ function createRoleIssuesCommand(
 ): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, commandName);
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const via = ws.getNode(viaId);
   const cmd = ws.getNode(cmdId);
@@ -642,7 +764,7 @@ function createRoleIssuesCommand(
   if (!via.kind.startsWith('ui.') && via.kind !== 'proc') {
     return errResult(commandName, 'INVALID_VIA_NODE', `Via node "${viaId}" must be a UI node or processor`);
   }
-  const role = ensureRoleNode(ws, roleId, commandName);
+  const role = ensureRoleNode(ws, mutation, roleId, commandName);
   if (isCliResult(role)) return role;
   const edgeId = ws.generateEdgeId();
   const edge = {
@@ -653,12 +775,10 @@ function createRoleIssuesCommand(
     toNodeId: cmd.canonicalId,
     viaNodeId: via.canonicalId,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult(commandName, {
     edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId, viaNodeId: edge.viaNodeId },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 export function roleIssuesCmd(ws: Workspace, roleId: string, viaId: string, cmdId: string): CLIResult {
@@ -668,6 +788,8 @@ export function roleIssuesCmd(ws: Workspace, roleId: string, viaId: string, cmdI
 export function procBindView(ws: Workspace, procId: string, viewModelId: string, fields?: string[]): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em proc bind-view');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const proc = ws.getNode(procId);
   if (!proc) return errResult('em proc bind-view', 'NOT_FOUND', `Processor "${procId}" not found`);
@@ -686,9 +808,7 @@ export function procBindView(ws: Workspace, procId: string, viewModelId: string,
     toNodeId: proc.canonicalId,
     meta: Object.keys(meta).length > 0 ? meta : undefined,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult('em proc bind-view', {
     edge: {
       id: edge.id,
@@ -697,12 +817,14 @@ export function procBindView(ws: Workspace, procId: string, viewModelId: string,
       toNodeId: edge.toNodeId,
       meta: edge.meta ?? {},
     },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 export function triggerIssuesCmd(ws: Workspace, triggerId: string, cmdId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em trigger issues-cmd');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const trigger = ws.getNode(triggerId);
   if (!trigger) return errResult('em trigger issues-cmd', 'NOT_FOUND', `Trigger "${triggerId}" not found`);
@@ -716,17 +838,17 @@ export function triggerIssuesCmd(ws: Workspace, triggerId: string, cmdId: string
     fromNodeId: trigger.canonicalId,
     toNodeId: cmd.canonicalId,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult('em trigger issues-cmd', {
     edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 export function storyBind(ws: Workspace, storyId: string, cmdId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em story bind');
+  if (isCliResult(mutation)) return mutation;
   const manifest = ws.getManifest()!;
   const story = ws.getNode(storyId);
   if (!story) return errResult('em story bind', 'NOT_FOUND', `Story "${storyId}" not found`);
@@ -740,12 +862,268 @@ export function storyBind(ws: Workspace, storyId: string, cmdId: string): CLIRes
     fromNodeId: story.canonicalId,
     toNodeId: cmd.canonicalId,
   };
-  ws.saveEdge(edge);
-  addDraftOp(ws, 'add', 'edge', edgeId);
-  const ctx = ws.getContext();
+  mutation.saveEdge(edge);
   return okResult('em story bind', {
     edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
+}
+
+type DataSchemaKind = 'command' | 'event';
+type DataSchema = CommandSchema | EventSchema;
+type DataSchemaField = CommandField | EventField;
+
+function dataSchemaGroup(kind: DataSchemaKind): 'cmd' | 'evt' {
+  return kind === 'command' ? 'cmd' : 'evt';
+}
+
+function dataSchemaNodeKind(kind: DataSchemaKind): Node['kind'] {
+  return dataSchemaGroup(kind);
+}
+
+function dataSchemaLabel(kind: DataSchemaKind): 'Command' | 'Event' {
+  return kind === 'command' ? 'Command' : 'Event';
+}
+
+function dataSchemaOwnerKey(kind: DataSchemaKind): 'commandId' | 'eventId' {
+  return kind === 'command' ? 'commandId' : 'eventId';
+}
+
+function dataSchemaCommand(kind: DataSchemaKind, noun: 'field' | 'schema', action: string): string {
+  return `em ${dataSchemaGroup(kind)} ${noun} ${action}`;
+}
+
+function readDataSchema(ws: Workspace, kind: DataSchemaKind, canonicalId: string): DataSchema | null {
+  return kind === 'command' ? ws.getCommandSchema(canonicalId) : ws.getEventSchema(canonicalId);
+}
+
+function emptyDataSchema(kind: DataSchemaKind, canonicalId: string): DataSchema {
+  return kind === 'command'
+    ? { commandNodeId: canonicalId, version: 1, input: { fields: [] } }
+    : { eventNodeId: canonicalId, version: 1, payload: { fields: [] } };
+}
+
+function dataSchemaFor(kind: DataSchemaKind, canonicalId: string, existing: DataSchema | null): DataSchema {
+  return existing ?? emptyDataSchema(kind, canonicalId);
+}
+
+function dataSchemaFields(schema: DataSchema, kind: DataSchemaKind): DataSchemaField[] {
+  return kind === 'command'
+    ? (schema as CommandSchema).input.fields
+    : (schema as EventSchema).payload.fields;
+}
+
+function replaceDataSchemaFields(schema: DataSchema, kind: DataSchemaKind, fields: DataSchemaField[]): void {
+  if (kind === 'command') {
+    (schema as CommandSchema).input.fields = fields as CommandField[];
+  } else {
+    (schema as EventSchema).payload.fields = fields as EventField[];
+  }
+}
+
+function schemaFieldPointer(kind: DataSchemaKind, fieldIndex: number): string {
+  return kind === 'command' ? `/input/fields/${fieldIndex}` : `/payload/fields/${fieldIndex}`;
+}
+
+function changedKeys(before: unknown, after: unknown): string[] {
+  const beforeRecord = before && typeof before === 'object' ? before as Record<string, unknown> : {};
+  const afterRecord = after && typeof after === 'object' ? after as Record<string, unknown> : {};
+  const keys = new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)]);
+  return [...keys].filter(key => JSON.stringify(beforeRecord[key]) !== JSON.stringify(afterRecord[key]));
+}
+
+function saveDataSchemaWithMutation(
+  mutation: MutationRunner,
+  kind: DataSchemaKind,
+  schema: DataSchema,
+  action: 'add' | 'edit' | 'remove',
+  before: unknown | null,
+  after: unknown | null,
+  options: { fieldId?: string; jsonPointer?: string; changedFields?: string[] } = {},
+): void {
+  if (kind === 'command') {
+    mutation.saveCommandSchema(schema as CommandSchema, action, before, after, options);
+  } else {
+    mutation.saveEventSchema(schema as EventSchema, action, before, after, options);
+  }
+}
+
+function dataSchemaOutput(kind: DataSchemaKind, canonicalId: string, schema: DataSchema): Record<string, unknown> {
+  const base = {
+    [dataSchemaOwnerKey(kind)]: canonicalId,
+    version: schema.version,
+  };
+  if (kind === 'command') {
+    return { ...base, input: { fields: dataSchemaFields(schema, kind) } };
+  }
+  return { ...base, payload: { fields: dataSchemaFields(schema, kind) } };
+}
+
+function dataSchemaInit(ws: Workspace, kind: DataSchemaKind, nodeId: string): CLIResult {
+  const commandName = dataSchemaCommand(kind, 'schema', 'init');
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, commandName);
+  if (isCliResult(mutation)) return mutation;
+  const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
+  if (isCliResult(node)) return node;
+
+  const existing = readDataSchema(ws, kind, node.canonicalId);
+  const schema = dataSchemaFor(kind, node.canonicalId, existing);
+  if (!existing) {
+    saveDataSchemaWithMutation(mutation, kind, schema, 'add', null, schema);
+  }
+
+  return okResult(commandName, {
+    created: !existing,
+    ...dataSchemaOutput(kind, node.canonicalId, schema),
+  }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+}
+
+function dataFieldAdd(
+  ws: Workspace, kind: DataSchemaKind, nodeId: string, fieldId: string, name: string,
+  type: string, flags: Record<string, unknown> = {},
+): CLIResult {
+  const commandName = dataSchemaCommand(kind, 'field', 'add');
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, commandName);
+  if (isCliResult(mutation)) return mutation;
+  const inputError = validateFieldInput(commandName, fieldId, name, type);
+  if (inputError) return inputError;
+  const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
+  if (isCliResult(node)) return node;
+  const required = requiredFromFlags(commandName, flags, true);
+  if (isCliResult(required)) return required;
+
+  const schema = dataSchemaFor(kind, node.canonicalId, readDataSchema(ws, kind, node.canonicalId));
+  const fields = dataSchemaFields(schema, kind);
+  if (fields.some(f => f.fieldId === fieldId)) {
+    return errResult(commandName, 'DUPLICATE', `Field "${fieldId}" already exists in "${node.canonicalId}"`);
+  }
+
+  const field: DataSchemaField = { fieldId, name, type, required };
+  if (typeof flags.description === 'string' && flags.description) field.description = flags.description;
+  fields.push(field);
+  saveDataSchemaWithMutation(mutation, kind, schema, 'add', null, field, {
+    fieldId,
+    jsonPointer: schemaFieldPointer(kind, fields.length - 1),
+  });
+
+  return okResult(commandName, {
+    [dataSchemaOwnerKey(kind)]: node.canonicalId,
+    field,
+  }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+}
+
+function dataFieldEdit(ws: Workspace, kind: DataSchemaKind, nodeId: string, fieldId: string, updates: Record<string, unknown>): CLIResult {
+  const commandName = dataSchemaCommand(kind, 'field', 'edit');
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, commandName);
+  if (isCliResult(mutation)) return mutation;
+  const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
+  if (isCliResult(node)) return node;
+  const schema = readDataSchema(ws, kind, node.canonicalId);
+  if (!schema) return errResult(commandName, 'NOT_FOUND', `Schema for "${nodeId}" not found`);
+  const fields = dataSchemaFields(schema, kind);
+  const fieldIndex = fields.findIndex(f => f.fieldId === fieldId);
+  const field = fields[fieldIndex];
+  if (!field) return errResult(commandName, 'NOT_FOUND', `Field "${fieldId}" not found`);
+  const before = snapshot(field);
+
+  const name = typeof updates.name === 'string' && updates.name ? updates.name : field.name;
+  const type = typeof updates.type === 'string' && updates.type ? updates.type : field.type;
+  const inputError = validateFieldInput(commandName, field.fieldId, name, type);
+  if (inputError) return inputError;
+  field.name = name;
+  field.type = type;
+  const required = requiredFromFlags(commandName, updates, field.required);
+  if (isCliResult(required)) return required;
+  field.required = required;
+  if (typeof updates.description === 'string') field.description = updates.description;
+
+  saveDataSchemaWithMutation(mutation, kind, schema, 'edit', before, field, {
+    fieldId,
+    jsonPointer: schemaFieldPointer(kind, fieldIndex),
+    changedFields: changedKeys(before, field),
+  });
+  return okResult(commandName, { [dataSchemaOwnerKey(kind)]: node.canonicalId, field }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+}
+
+function dataFieldRm(ws: Workspace, kind: DataSchemaKind, nodeId: string, fieldId: string): CLIResult {
+  const commandName = dataSchemaCommand(kind, 'field', 'rm');
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, commandName);
+  if (isCliResult(mutation)) return mutation;
+  const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
+  if (isCliResult(node)) return node;
+  const schema = readDataSchema(ws, kind, node.canonicalId);
+  if (!schema) return errResult(commandName, 'NOT_FOUND', `Schema for "${nodeId}" not found`);
+  const fields = dataSchemaFields(schema, kind);
+  const fieldIndex = fields.findIndex(f => f.fieldId === fieldId);
+  if (fieldIndex === -1) return errResult(commandName, 'NOT_FOUND', `Field "${fieldId}" not found`);
+  const before = snapshot(fields[fieldIndex]);
+  const nextFields = fields.filter(f => f.fieldId !== fieldId);
+  replaceDataSchemaFields(schema, kind, nextFields);
+  saveDataSchemaWithMutation(mutation, kind, schema, 'remove', before, null, {
+    fieldId,
+    jsonPointer: schemaFieldPointer(kind, fieldIndex),
+  });
+  return okResult(commandName, {
+    removedFieldId: fieldId,
+    [dataSchemaOwnerKey(kind)]: node.canonicalId,
+  }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+}
+
+function dataSchemaShow(ws: Workspace, kind: DataSchemaKind, nodeId: string): CLIResult {
+  const commandName = dataSchemaCommand(kind, 'schema', 'show');
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
+  if (isCliResult(node)) return node;
+  const schema = dataSchemaFor(kind, node.canonicalId, readDataSchema(ws, kind, node.canonicalId));
+  return okResult(commandName, dataSchemaOutput(kind, node.canonicalId, schema), { projectId: ws.getManifest()!.id });
+}
+
+export function cmdSchemaInit(ws: Workspace, commandId: string): CLIResult {
+  return dataSchemaInit(ws, 'command', commandId);
+}
+
+export function evtSchemaInit(ws: Workspace, eventId: string): CLIResult {
+  return dataSchemaInit(ws, 'event', eventId);
+}
+
+export function cmdFieldAdd(ws: Workspace, commandId: string, fieldId: string, name: string, type: string, flags: Record<string, unknown> = {}): CLIResult {
+  return dataFieldAdd(ws, 'command', commandId, fieldId, name, type, flags);
+}
+
+export function evtFieldAdd(ws: Workspace, eventId: string, fieldId: string, name: string, type: string, flags: Record<string, unknown> = {}): CLIResult {
+  return dataFieldAdd(ws, 'event', eventId, fieldId, name, type, flags);
+}
+
+export function cmdFieldEdit(ws: Workspace, commandId: string, fieldId: string, updates: Record<string, unknown>): CLIResult {
+  return dataFieldEdit(ws, 'command', commandId, fieldId, updates);
+}
+
+export function evtFieldEdit(ws: Workspace, eventId: string, fieldId: string, updates: Record<string, unknown>): CLIResult {
+  return dataFieldEdit(ws, 'event', eventId, fieldId, updates);
+}
+
+export function cmdFieldRm(ws: Workspace, commandId: string, fieldId: string): CLIResult {
+  return dataFieldRm(ws, 'command', commandId, fieldId);
+}
+
+export function evtFieldRm(ws: Workspace, eventId: string, fieldId: string): CLIResult {
+  return dataFieldRm(ws, 'event', eventId, fieldId);
+}
+
+export function cmdSchemaShow(ws: Workspace, commandId: string): CLIResult {
+  return dataSchemaShow(ws, 'command', commandId);
+}
+
+export function evtSchemaShow(ws: Workspace, eventId: string): CLIResult {
+  return dataSchemaShow(ws, 'event', eventId);
 }
 
 export function viewFieldAdd(
@@ -754,9 +1132,17 @@ export function viewFieldAdd(
 ): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
-  const view = ws.getNode(viewModelId);
-  if (!view) return errResult('em view field add', 'NOT_FOUND', `ViewModel "${viewModelId}" not found`);
+  const mutation = mutationRunnerOrResult(ws, 'em view field add');
+  if (isCliResult(mutation)) return mutation;
+  const inputError = validateFieldInput('em view field add', fieldId, name, type);
+  if (inputError) return inputError;
+  const view = requireNodeKind(ws, 'em view field add', viewModelId, 'viewModel', 'ViewModel');
+  if (isCliResult(view)) return view;
+  if (!fromEvent || !path) return errResult('em view field add', 'INVALID_ARGUMENT', 'View fields require --from-event and --path');
   const schema = ws.getViewModelSchema(view.canonicalId) ?? { viewModelNodeId: view.canonicalId, fields: [] };
+  if (schema.fields.some(f => f.fieldId === fieldId)) {
+    return errResult('em view field add', 'DUPLICATE', `Field "${fieldId}" already exists in "${view.canonicalId}"`);
+  }
   const field = {
     fieldId,
     name,
@@ -765,47 +1151,66 @@ export function viewFieldAdd(
     source: { eventNodeId: fromEvent, eventFieldPath: path },
   };
   schema.fields.push(field);
-  ws.saveViewModelSchema(schema);
-  addDraftOp(ws, 'add', 'schema', fieldId, { viewModelId: view.canonicalId });
-  const ctx = ws.getContext();
-  return okResult('em view field add', { field }, { projectId: ws.getManifest()!.id, draftId: ctx?.draft?.id });
+  mutation.saveViewModelSchema(schema, 'add', null, field, {
+    fieldId,
+    jsonPointer: `/fields/${schema.fields.length - 1}`,
+  });
+  return okResult('em view field add', { field }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
 }
 
 export function viewFieldEdit(ws: Workspace, viewModelId: string, fieldId: string, updates: Record<string, unknown>): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
-  const view = ws.getNode(viewModelId);
-  if (!view) return errResult('em view field edit', 'NOT_FOUND', `ViewModel "${viewModelId}" not found`);
+  const mutation = mutationRunnerOrResult(ws, 'em view field edit');
+  if (isCliResult(mutation)) return mutation;
+  const view = requireNodeKind(ws, 'em view field edit', viewModelId, 'viewModel', 'ViewModel');
+  if (isCliResult(view)) return view;
   const schema = ws.getViewModelSchema(view.canonicalId);
   if (!schema) return errResult('em view field edit', 'NOT_FOUND', `Schema for "${viewModelId}" not found`);
-  const field = schema.fields.find(f => f.fieldId === fieldId);
+  const fieldIndex = schema.fields.findIndex(f => f.fieldId === fieldId);
+  const field = schema.fields[fieldIndex];
   if (!field) return errResult('em view field edit', 'NOT_FOUND', `Field "${fieldId}" not found`);
-  if (updates['name']) field.name = updates['name'] as string;
-  if (updates['type']) field.type = updates['type'] as string;
+  const before = snapshot(field);
+  const name = typeof updates.name === 'string' && updates.name ? updates.name : field.name;
+  const type = typeof updates.type === 'string' && updates.type ? updates.type : field.type;
+  const inputError = validateFieldInput('em view field edit', field.fieldId, name, type);
+  if (inputError) return inputError;
+  field.name = name;
+  field.type = type;
   if ('nullable' in updates) field.nullable = updates['nullable'] as boolean;
-  ws.saveViewModelSchema(schema);
-  const ctx = ws.getContext();
-  return okResult('em view field edit', { field: { fieldId: field.fieldId, name: field.name, type: field.type, nullable: field.nullable } }, { projectId: ws.getManifest()!.id, draftId: ctx?.draft?.id });
+  mutation.saveViewModelSchema(schema, 'edit', before, field, {
+    fieldId,
+    jsonPointer: `/fields/${fieldIndex}`,
+    changedFields: changedKeys(before, field),
+  });
+  return okResult('em view field edit', { field: { fieldId: field.fieldId, name: field.name, type: field.type, nullable: field.nullable } }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
 }
 
 export function viewFieldRm(ws: Workspace, viewModelId: string, fieldId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
-  const view = ws.getNode(viewModelId);
-  if (!view) return errResult('em view field rm', 'NOT_FOUND', `ViewModel "${viewModelId}" not found`);
+  const mutation = mutationRunnerOrResult(ws, 'em view field rm');
+  if (isCliResult(mutation)) return mutation;
+  const view = requireNodeKind(ws, 'em view field rm', viewModelId, 'viewModel', 'ViewModel');
+  if (isCliResult(view)) return view;
   const schema = ws.getViewModelSchema(view.canonicalId);
   if (!schema) return errResult('em view field rm', 'NOT_FOUND', `Schema for "${viewModelId}" not found`);
+  const fieldIndex = schema.fields.findIndex(f => f.fieldId === fieldId);
+  if (fieldIndex === -1) return errResult('em view field rm', 'NOT_FOUND', `Field "${fieldId}" not found`);
+  const before = snapshot(schema.fields[fieldIndex]);
   schema.fields = schema.fields.filter(f => f.fieldId !== fieldId);
-  ws.saveViewModelSchema(schema);
-  const ctx = ws.getContext();
-  return okResult('em view field rm', { removedFieldId: fieldId, viewModelId: view.canonicalId }, { projectId: ws.getManifest()!.id, draftId: ctx?.draft?.id });
+  mutation.saveViewModelSchema(schema, 'remove', before, null, {
+    fieldId,
+    jsonPointer: `/fields/${fieldIndex}`,
+  });
+  return okResult('em view field rm', { removedFieldId: fieldId, viewModelId: view.canonicalId }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
 }
 
 export function viewSchemaShow(ws: Workspace, viewModelId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
-  const view = ws.getNode(viewModelId);
-  if (!view) return errResult('em view schema show', 'NOT_FOUND', `ViewModel "${viewModelId}" not found`);
+  const view = requireNodeKind(ws, 'em view schema show', viewModelId, 'viewModel', 'ViewModel');
+  if (isCliResult(view)) return view;
   const schema = ws.getViewModelSchema(view.canonicalId);
   return okResult('em view schema show', {
     viewModelId: view.canonicalId,
@@ -906,7 +1311,7 @@ export function emValidate(ws: Workspace): CLIResult {
       if (schema) vmSchemas.push(schema);
     }
   }
-  const errors = validate(nodes, edges, vmSchemas);
+  const errors = validate(nodes, edges, vmSchemas, ws.listCommandSchemas(), ws.listEventSchemas());
   return okResult('em validate', {
     valid: errors.length === 0,
     errors: errors.map(e => ({ code: e.code, message: e.message, details: e.details })),
@@ -919,25 +1324,41 @@ export function emReview(ws: Workspace): CLIResult {
   const ctx = ws.getContext();
   const draft = ctx?.draft;
   if (!draft) return errResult('em review', 'NO_DRAFT', 'No active draft');
-  const nodes = ws.listNodes();
-  const edges = ws.listEdges();
-  const cmdCount = nodes.filter(n => n.kind === 'cmd').length;
-  const evtCount = nodes.filter(n => n.kind === 'evt').length;
-  const viewCount = nodes.filter(n => n.kind === 'viewModel').length;
-  const storyCount = nodes.filter(n => n.kind.startsWith('story.')).length;
+  const diff = buildSemanticDiff(draft);
+  const totalChanges = diff.summary.totalChanges ?? diff.changes.length;
+  const changedNodes = diff.changes
+    .filter(change => change.entityType === 'node')
+    .map(change => (change.after ?? change.before) as Partial<Node>)
+    .filter(node => typeof node.kind === 'string');
+  const cmdCount = changedNodes.filter(n => n.kind === 'cmd').length;
+  const evtCount = changedNodes.filter(n => n.kind === 'evt').length;
+  const viewCount = changedNodes.filter(n => n.kind === 'viewModel').length;
+  const storyCount = changedNodes.filter(n => n.kind?.startsWith('story.')).length;
+  const edgeCount = (diff.summary.edgesAdded ?? 0) + (diff.summary.edgesUpdated ?? 0) + (diff.summary.edgesRemoved ?? 0);
+  const schemaCount = (diff.summary.schemasAdded ?? 0) + (diff.summary.schemasUpdated ?? 0) + (diff.summary.schemasRemoved ?? 0);
+  const fieldCount = (diff.summary.fieldsAdded ?? 0) + (diff.summary.fieldsUpdated ?? 0) + (diff.summary.fieldsRemoved ?? 0);
+  const proposalCount = (diff.summary.proposalsAdded ?? 0) + (diff.summary.proposalsUpdated ?? 0) + (diff.summary.proposalsRemoved ?? 0);
   const findings: string[] = [];
-  if (cmdCount > 0) findings.push(`Project has ${cmdCount} command(s)`);
-  if (evtCount > 0) findings.push(`Project has ${evtCount} event(s)`);
-  if (viewCount > 0) findings.push(`Project has ${viewCount} view model(s)`);
-  const changedNodes = draft.ops.filter(o => o.op === 'add' && o.entityType === 'node').length;
-  findings.push(`Draft changes ${changedNodes} node(s)`);
+  if (cmdCount > 0) findings.push(`Draft changes ${cmdCount} command(s)`);
+  if (evtCount > 0) findings.push(`Draft changes ${evtCount} event(s)`);
+  if (viewCount > 0) findings.push(`Draft changes ${viewCount} view model(s)`);
+  if (edgeCount > 0) findings.push(`Draft changes ${edgeCount} edge(s)`);
+  if (schemaCount > 0) findings.push(`Draft changes ${schemaCount} schema envelope(s)`);
+  if (fieldCount > 0) findings.push(`Draft changes ${fieldCount} schema field(s)`);
+  if (proposalCount > 0) findings.push(`Draft changes ${proposalCount} proposal(s)`);
+  findings.push(`Draft has ${totalChanges} semantic change(s)`);
   return okResult('em review', {
     summary: {
-      riskLevel: changedNodes > 5 ? 'high' : changedNodes > 2 ? 'medium' : 'low',
+      riskLevel: totalChanges > 8 ? 'high' : totalChanges > 3 ? 'medium' : 'low',
       changedStories: storyCount,
       changedCommands: cmdCount,
       changedEvents: evtCount,
       changedViews: viewCount,
+      changedEdges: edgeCount,
+      changedSchemas: schemaCount,
+      changedFields: fieldCount,
+      changedProposals: proposalCount,
+      totalChanges,
     },
     findings,
   }, { projectId: ws.getManifest()!.id, draftId: draft.id });
@@ -1024,6 +1445,8 @@ export function reviewImpactField(ws: Workspace, viewModelId: string, fieldId: s
 export function storySuggestBind(ws: Workspace, storyId: string, cmdIds: string[], mode: 'core' | 'full' = 'full'): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em story suggest-bind');
+  if (isCliResult(mutation)) return mutation;
   const story = ws.getNode(storyId);
   if (!story) return errResult('em story suggest-bind', 'NOT_FOUND', `Story "${storyId}" not found`);
   const nodes = ws.listNodes();
@@ -1092,16 +1515,18 @@ export function storySuggestBind(ws: Workspace, storyId: string, cmdIds: string[
     },
     overrides: [],
   };
-  ws.saveProposal(proposal);
-  const ctx = ws.getContext();
-  return okResult('em story suggest-bind', { proposal }, { projectId: ws.getManifest()!.id, draftId: ctx?.draft?.id });
+  mutation.saveProposal(proposal);
+  return okResult('em story suggest-bind', { proposal }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
 }
 
 export function storyReviseBind(ws: Workspace, proposalId: string, op: string, args: Record<string, unknown>): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em story revise-bind');
+  if (isCliResult(mutation)) return mutation;
   const proposal = ws.getProposal(proposalId);
   if (!proposal) return errResult('em story revise-bind', 'NOT_FOUND', `Proposal "${proposalId}" not found`);
+  const before = snapshot(proposal);
   const newId = ws.generateProposalId();
   const revised: Proposal = {
     ...JSON.parse(JSON.stringify(proposal)),
@@ -1177,14 +1602,15 @@ export function storyReviseBind(ws: Workspace, proposalId: string, op: string, a
     }
   }
 
-  ws.saveProposal(revised);
-  const ctx = ws.getContext();
-  return okResult('em story revise-bind', { proposal: revised }, { projectId: ws.getManifest()!.id, draftId: ctx?.draft?.id });
+  mutation.saveProposal(revised, 'edit', before);
+  return okResult('em story revise-bind', { proposal: revised }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
 }
 
 export function storyConfirmBind(ws: Workspace, storyId: string, proposalId: string): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em story confirm-bind');
+  if (isCliResult(mutation)) return mutation;
   const proposal = ws.getProposal(proposalId);
   if (!proposal) return errResult('em story confirm-bind', 'NOT_FOUND', `Proposal "${proposalId}" not found`);
   const manifest = ws.getManifest()!;
@@ -1198,15 +1624,13 @@ export function storyConfirmBind(ws: Workspace, storyId: string, proposalId: str
       fromNodeId: proposal.storyId,
       toNodeId: cmdId,
     };
-    ws.saveEdge(edge);
+    mutation.saveEdge(edge);
     createdEdges.push(edge);
-    addDraftOp(ws, 'add', 'edge', edgeId);
   }
-  const ctx = ws.getContext();
   return okResult('em story confirm-bind', {
     confirmedProposalId: proposalId,
     createdEdges: createdEdges.map(e => ({ id: e.id, type: e.type, fromNodeId: e.fromNodeId, toNodeId: e.toNodeId })),
-  }, { projectId: manifest.id, draftId: ctx?.draft?.id });
+  }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
 export function roots(ws: Workspace): CLIResult {

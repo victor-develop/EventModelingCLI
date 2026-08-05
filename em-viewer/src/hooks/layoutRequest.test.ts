@@ -120,4 +120,45 @@ describe('layoutRequest URL helpers', () => {
     expect(params.get('focus')).toBe('returns.proc.public-api');
     expect(params.get('includeTruncatedPaths')).toBe('true');
   });
+
+  test('reads draft compare overlay params from shareable URLs', () => {
+    window.history.replaceState(null, '', '/?focus=returns.proc.public-api&draft=draft_001&graph=compare&diff=overlay');
+
+    expect(readLayoutRequestFromLocation('ui.screen.fallback')).toEqual({
+      focus: 'returns.proc.public-api',
+      direction: 'both',
+      hops: 2,
+      includeTruncatedPaths: false,
+      draft: 'draft_001',
+      graph: 'compare',
+      diff: 'overlay',
+    });
+  });
+
+  test('walk requests preserve draft graph and diff context', () => {
+    expect(walkLayoutRequest(
+      'returns.view.order-summary',
+      'forward',
+      5,
+      true,
+      12,
+      {
+        focus: 'returns.proc.public-api',
+        direction: 'both',
+        hops: 2,
+        includeTruncatedPaths: true,
+        draft: 'draft_001',
+        graph: 'compare',
+        diff: 'overlay',
+      },
+    )).toEqual({
+      focus: 'returns.view.order-summary',
+      direction: 'forward',
+      hops: 5,
+      includeTruncatedPaths: true,
+      draft: 'draft_001',
+      graph: 'compare',
+      diff: 'overlay',
+    });
+  });
 });

@@ -162,6 +162,117 @@ describe('xyflow adapter contract fixtures', () => {
     expect(nodes.find((node) => node.id === 'occ-proc-api')?.type).toBe('em.proc');
   });
 
+  test('maps diff overlay markers into React Flow node and edge data', () => {
+    const snapshot = {
+      focusNodeId: 'cmd.submit-order',
+      projectName: 'Order Management',
+      truncation: {
+        includeTruncatedPaths: false,
+        hiddenPathCount: 0,
+      },
+      layoutState: {},
+      occurrences: [
+        {
+          occurrenceId: 'occ-cmd-submit',
+          canonicalNodeId: 'cmd.submit-order',
+          nodeKind: 'cmd',
+          lane: 'commandViewModel',
+          stageIndex: 0,
+          rowIndex: 0,
+          displayRole: 'command',
+          branchClusterId: 'fwd_0',
+          lockLevel: 'none',
+          x: 0,
+          y: 0,
+          width: 220,
+          height: 56,
+        },
+        {
+          occurrenceId: 'occ-evt-submitted',
+          canonicalNodeId: 'evt.order-submitted',
+          nodeKind: 'evt',
+          lane: 'event',
+          stageIndex: 1,
+          rowIndex: 0,
+          displayRole: 'event',
+          branchClusterId: 'fwd_0',
+          lockLevel: 'none',
+          x: 400,
+          y: 200,
+          width: 220,
+          height: 56,
+        },
+      ],
+      renderedEdges: [
+        {
+          displayEdgeId: 'de_1',
+          fromOccurrenceId: 'occ-cmd-submit',
+          toOccurrenceId: 'occ-evt-submitted',
+          kind: 'cmd-to-evt',
+          points: [],
+          meta: { originalEdgeId: 'edge-cmd-to-evt' },
+        },
+      ],
+      swimlaneRects: [
+        { lane: 'commandViewModel', x: -40, y: -40, width: 700, height: 136 },
+        { lane: 'event', x: -40, y: 160, width: 700, height: 136 },
+      ],
+      laneDescriptors: [],
+      domainNodes: {
+        'cmd.submit-order': {
+          id: 'cmd.submit-order',
+          projectId: 'orders',
+          kind: 'cmd',
+          canonicalId: 'cmd.submit-order',
+          displayName: 'Submit Order',
+          tags: [],
+          domains: [],
+        },
+        'evt.order-submitted': {
+          id: 'evt.order-submitted',
+          projectId: 'orders',
+          kind: 'evt',
+          canonicalId: 'evt.order-submitted',
+          displayName: 'Order Submitted',
+          tags: [],
+          domains: [],
+        },
+      },
+      domainEdges: {},
+      laneMap: {},
+      diffOverlay: {
+        nodesByCanonicalId: {
+          'cmd.submit-order': { status: 'changed', changeIds: ['node:cmd.submit-order'] },
+        },
+        edgesById: {
+          'edge-cmd-to-evt': { status: 'added', changeIds: ['edge:edge-cmd-to-evt'] },
+        },
+        visibleChanges: [],
+        hiddenChanges: [],
+        summary: { totalChanges: 2 },
+      },
+    } as VisualizationSnapshot;
+
+    const nodes = toReactFlowNodes(snapshot);
+    const edges = toReactFlowEdges(snapshot);
+
+    expect(nodes.find((node) => node.id === 'occ-cmd-submit')?.data.diff).toEqual({
+      status: 'changed',
+      changeIds: ['node:cmd.submit-order'],
+    });
+    expect(edges.find((edge) => edge.id === 'de_1')?.data?.diff).toEqual({
+      status: 'added',
+      changeIds: ['edge:edge-cmd-to-evt'],
+    });
+    expect(edges.find((edge) => edge.id === 'de_1')?.markerEnd).toMatchObject({
+      color: '#3d8b63',
+    });
+    expect(edges.find((edge) => edge.id === 'de_1')?.style).toMatchObject({
+      stroke: '#3d8b63',
+      strokeWidth: 3,
+    });
+  });
+
   test('creates dynamic role lane groups and parents role-owned occurrences to them', () => {
     const snapshot = {
       focusNodeId: 'ui.screen.return-portal',

@@ -68,6 +68,8 @@ All commands should return a consistent top-level envelope.
 - `revisionId` is present when the command resolves or creates a revision.
 - `data` is command-specific and documented on each child page.
 - `warnings` is always an array.
+- Mutating model commands require an open draft. Run `em draft start --n "..."` before creating or changing nodes, edges, schemas, fields, or proposals.
+- A project can have only one open draft at a time. `em draft start` returns `DRAFT_ALREADY_OPEN` until the existing draft is submitted.
 
 ### Command groups
 
@@ -119,7 +121,11 @@ All commands should return a consistent top-level envelope.
 
 [em cmd new](CLI%20Command%20Reference/em%20cmd%20new%208c0b90fd910b4d049dd44bcb4c499592.md)
 
+[em cmd schema management](CLI%20Command%20Reference/em%20cmd%20schema%20management.md)
+
 [em evt new](CLI%20Command%20Reference/em%20evt%20new%203c5559ebc9ed4ceca34107279124f371.md)
+
+[em evt schema management](CLI%20Command%20Reference/em%20evt%20schema%20management.md)
 
 [em view new](CLI%20Command%20Reference/em%20view%20new%2081439966d00045ca8b995a27835ff103.md)
 

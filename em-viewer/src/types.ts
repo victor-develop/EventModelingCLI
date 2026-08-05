@@ -1,3 +1,4 @@
+import type { DiffStatus } from '@em/viewer-contract/types';
 import { getVisibleLaneLabel, toVisibleLane, type VisibleLane } from '@em/viewer-contract/lanePolicy';
 
 export const NODE_COLORS: Record<string, string> = {
@@ -18,6 +19,12 @@ export const EDGE_COLORS: Record<string, string> = {
   'evt-to-viewModel': '#b86b4b',
   'viewModel-to-shared': '#705c8f',
   'evt-to-shared': '#64706c',
+};
+
+export const DIFF_COLORS: Record<DiffStatus, string> = {
+  added: '#3d8b63',
+  changed: '#c09032',
+  removed: '#b15d55',
 };
 
 export const LANE_BG: Record<VisibleLane, string> = {

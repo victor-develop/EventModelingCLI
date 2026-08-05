@@ -2,7 +2,9 @@
 
 ### Purpose
 
-Render the current draft as a diff.
+Render the current draft as a semantic diff.
+
+Schema envelope changes (`schemasAdded`, `schemasUpdated`, `schemasRemoved`) are reported separately from field-level changes (`fieldsAdded`, `fieldsUpdated`, `fieldsRemoved`) so review UIs can visualize them differently.
 
 ### Syntax
 
@@ -19,7 +21,8 @@ em draft diff [--format text|json|mermaid]
     "nodesAdded": ["order.refund.evt.refund.status-updated"],
     "nodesUpdated": ["order.payment.view.charge.detail"],
     "edgesAdded": ["edge_101"],
-    "fieldsAdded": ["f.refund-status"]
+    "schemasAdded": ["order.payment.view.charge.detail"],
+    "fieldsAdded": ["order.payment.view.charge.detail#f.refund-status"]
   }
 }
 ```
@@ -42,7 +45,8 @@ em draft diff --format json
       "nodesAdded": ["order.refund.evt.refund.status-updated"],
       "nodesUpdated": ["order.payment.view.charge.detail"],
       "edgesAdded": ["edge_101"],
-      "fieldsAdded": ["f.refund-status"]
+      "schemasAdded": ["order.payment.view.charge.detail"],
+      "fieldsAdded": ["order.payment.view.charge.detail#f.refund-status"]
     }
   },
   "warnings": []

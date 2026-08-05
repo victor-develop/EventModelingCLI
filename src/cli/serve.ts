@@ -3,12 +3,25 @@ import cors from 'cors';
 import type { Server } from 'node:http';
 import { Workspace } from '../workspace/workspace';
 import { buildGraph, walkGraph, findRoots } from '../graph/graph-builder';
-import type { Node, Edge } from '../domain/types';
+import type { Edge, ModelSnapshot, Node } from '../domain/types';
 import { EVENT_MODELING_EDGE_TYPES, toEventModelingEdges } from '../domain/event-modeling-edges';
 import type { WalkBranch } from '../graph/graph-builder';
 import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewer-contract';
 import type { SnapshotDirection } from '../viewer-contract';
 import { resolveNodeLaneMap } from '../viewer-contract/laneAssignment';
+import { buildSemanticDiff } from '../drafts/diff';
+import {
+  currentModelSnapshot,
+  modelSnapshotForDraftGraph,
+} from '../drafts/projection';
+import { buildViewerDiffChanges } from '../drafts/viewer-diff';
+import {
+  draftContext,
+  emptyModelSnapshot,
+  resolveViewerProjection,
+  withViewerProjectionContext,
+  type ViewerProjection,
+} from '../drafts/viewer-projection';
 
 const activeServers: Server[] = [];
 const activeKeepAlives: Array<ReturnType<typeof setInterval>> = [];
@@ -28,21 +41,9 @@ export function createServerApp(ws: Workspace): {
     console.error(`No active project. Run 'em project init' or 'em project open' first.`);
   }
 
-  const nodes = manifest ? ws.listNodes() : [];
-  const edges = manifest ? ws.listEdges() : [];
-  const eventModelingEdges = toEventModelingEdges(edges);
-  const domainGraph = buildGraph(nodes, edges);
-  const eventModelingGraph = buildGraph(nodes, eventModelingEdges);
+  const initialModel = manifest ? currentModelSnapshot(ws) : emptyModelSnapshot();
 
-  const laneMap = resolveNodeLaneMap(domainGraph);
-
-  const nodeMap = new Map<string, Node>();
-  for (const n of nodes) nodeMap.set(n.canonicalId, n);
-
-  const edgeMap = new Map<string, Edge>();
-  for (const e of edges) edgeMap.set(e.id, e);
-
-  function collectNodes(branches: WalkBranch[]): Record<string, Node> {
+  function collectNodes(branches: WalkBranch[], nodeMap: Map<string, Node>): Record<string, Node> {
     const ids = new Set<string>();
     for (const b of branches) {
       for (const s of b.path) {
@@ -57,7 +58,7 @@ export function createServerApp(ws: Workspace): {
     return result;
   }
 
-  function collectEdges(branches: WalkBranch[]): Record<string, Edge> {
+  function collectEdges(branches: WalkBranch[], edgeMap: Map<string, Edge>): Record<string, Edge> {
     const ids = new Set<string>();
     for (const b of branches) {
       for (const s of b.path) {
@@ -72,7 +73,8 @@ export function createServerApp(ws: Workspace): {
     return result;
   }
 
-  function laneMapForNodes(nodeIds: Iterable<string>): Record<string, string> {
+  function laneMapForNodes(modelSnapshot: ModelSnapshot, nodeIds: Iterable<string>): Record<string, string> {
+    const laneMap = resolveNodeLaneMap(buildGraph(modelSnapshot.nodes, modelSnapshot.edges));
     const result: Record<string, string> = {};
     for (const id of nodeIds) {
       const lane = laneMap.get(id);
@@ -90,12 +92,77 @@ export function createServerApp(ws: Workspace): {
     });
   }
 
-  app.get('/api/roots', (_req, res) => {
+  app.get('/api/drafts', (_req, res) => {
     if (!manifest) {
       sendNoProject(res);
       return;
     }
 
+    const activeDraftId = ws.getContext()?.draft?.id ?? null;
+    res.json({
+      activeDraftId,
+      drafts: ws.listDrafts().map(draft => ({
+        id: draft.id,
+        status: draft.status,
+        baseRevisionId: draft.baseRevisionId,
+        message: draft.message,
+        isActive: draft.id === activeDraftId,
+        summary: buildSemanticDiff(draft).summary,
+      })),
+    });
+  });
+
+  app.get('/api/drafts/:draftId/diff', (req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
+    const draft = ws.getDraft(req.params.draftId);
+    if (!draft) {
+      res.status(404).json({
+        error: {
+          code: 'DRAFT_NOT_FOUND',
+          message: `Draft not found: ${req.params.draftId}`,
+        },
+      });
+      return;
+    }
+    if (!draft.baseSnapshot) {
+      res.status(400).json({
+        error: {
+          code: 'DRAFT_BASE_SNAPSHOT_MISSING',
+          message: `Draft "${draft.id}" does not have a base model snapshot`,
+        },
+      });
+      return;
+    }
+
+    const afterSnapshot = modelSnapshotForDraftGraph(draft, 'after');
+    res.json({
+      draft: draftContext(draft, 'compare', 'overlay'),
+      diff: {
+        summary: buildSemanticDiff(draft).summary,
+        changes: buildViewerDiffChanges(draft.baseSnapshot, afterSnapshot).map(compactDiffChange),
+      },
+    });
+  });
+
+  app.get('/api/roots', (req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
+    let projection: ViewerProjection;
+    try {
+      projection = resolveViewerProjection(ws, viewerProjectionRequest(req));
+    } catch (error) {
+      sendVisualizationError(res, error);
+      return;
+    }
+
+    const domainGraph = buildGraph(projection.modelSnapshot.nodes, projection.modelSnapshot.edges);
     const rootNodes = findRoots(domainGraph);
     const rootIds = rootNodes.map(r => r.canonicalId);
     res.json({
@@ -105,11 +172,12 @@ export function createServerApp(ws: Workspace): {
         displayName: r.displayName,
       })),
       projectName: manifest.name,
-      laneMap: laneMapForNodes(rootIds),
+      draft: projection.draft ? draftContext(projection.draft, projection.graph, projection.diff) : undefined,
+      laneMap: laneMapForNodes(projection.modelSnapshot, rootIds),
       graphStats: {
-        nodeCount: nodes.length,
-        edgeCount: edges.length,
-        eventModelingEdgeCount: eventModelingEdges.length,
+        nodeCount: projection.modelSnapshot.nodes.length,
+        edgeCount: projection.modelSnapshot.edges.length,
+        eventModelingEdgeCount: toEventModelingEdges(projection.modelSnapshot.edges).length,
       },
     });
   });
@@ -120,17 +188,24 @@ export function createServerApp(ws: Workspace): {
       return;
     }
 
-    const focus = (req.query.focus as string) || nodes[0]?.canonicalId || '';
+    const modelSnapshot = currentModelSnapshot(ws);
+    const nodes = modelSnapshot.nodes;
+    const edges = modelSnapshot.edges;
+    const eventModelingEdges = toEventModelingEdges(edges);
+    const eventModelingGraph = buildGraph(nodes, eventModelingEdges);
+    const nodeMap = new Map(nodes.map(n => [n.canonicalId, n]));
+    const edgeMap = new Map(edges.map(e => [e.id, e]));
+    const focus = firstQueryValue(req.query.focus) || nodes[0]?.canonicalId || '';
     const result = walkGraph(eventModelingGraph, focus, 'both', EVENT_MODELING_EDGE_TYPES, 1);
-    const collectedNodes = collectNodes(result.branches);
+    const collectedNodes = collectNodes(result.branches, nodeMap);
 
     res.json({
       focusNodeId: focus,
       projectName: manifest.name,
       branches: result.branches,
       nodes: collectedNodes,
-      edges: collectEdges(result.branches),
-      laneMap: laneMapForNodes(Object.keys(collectedNodes)),
+      edges: collectEdges(result.branches, edgeMap),
+      laneMap: laneMapForNodes(modelSnapshot, Object.keys(collectedNodes)),
     });
   });
 
@@ -140,9 +215,17 @@ export function createServerApp(ws: Workspace): {
       return;
     }
 
-    const focus = (req.query.focus as string) || nodes[0]?.canonicalId || '';
-    const direction = ((req.query.direction as string) || 'both') as SnapshotDirection;
-    const hops = parseInt(req.query.hops as string) || 2;
+    let projection: ViewerProjection;
+    try {
+      projection = resolveViewerProjection(ws, viewerProjectionRequest(req));
+    } catch (error) {
+      sendVisualizationError(res, error);
+      return;
+    }
+
+    const focus = firstQueryValue(req.query.focus) || projection.modelSnapshot.nodes[0]?.canonicalId || '';
+    const direction = (firstQueryValue(req.query.direction) || 'both') as SnapshotDirection;
+    const hops = parseInt(firstQueryValue(req.query.hops) ?? '') || 2;
     const includeTruncatedPaths = parseBooleanQuery(req.query.includeTruncatedPaths);
 
     if (!focus) {
@@ -156,25 +239,18 @@ export function createServerApp(ws: Workspace): {
     }
 
     try {
-      res.json(buildVisualizationSnapshot({
+      const snapshot = buildVisualizationSnapshot({
         workspace: ws,
+        modelSnapshot: projection.modelSnapshot,
+        projectName: manifest.name,
         focus,
         direction,
         hops,
         includeTruncatedPaths,
-      }));
+      });
+      res.json(withViewerProjectionContext(snapshot, projection, focus));
     } catch (error) {
-      if (error instanceof VisualizationSnapshotError) {
-        res.status(error.status).json({
-          error: {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-          },
-        });
-        return;
-      }
-      throw error;
+      sendVisualizationError(res, error);
     }
   });
 
@@ -184,9 +260,15 @@ export function createServerApp(ws: Workspace): {
       return;
     }
 
-    const from = req.query.from as string;
-    const direction = (req.query.direction as 'forward' | 'backward' | 'both') || 'forward';
-    const hops = parseInt(req.query.hops as string) || 3;
+    const modelSnapshot = currentModelSnapshot(ws);
+    const nodes = modelSnapshot.nodes;
+    const edges = modelSnapshot.edges;
+    const eventModelingGraph = buildGraph(nodes, toEventModelingEdges(edges));
+    const nodeMap = new Map(nodes.map(n => [n.canonicalId, n]));
+    const edgeMap = new Map(edges.map(e => [e.id, e]));
+    const from = firstQueryValue(req.query.from);
+    const direction = (firstQueryValue(req.query.direction) as 'forward' | 'backward' | 'both') || 'forward';
+    const hops = parseInt(firstQueryValue(req.query.hops) ?? '') || 3;
 
     if (!from) {
       res.status(400).json({ error: 'from query parameter is required' });
@@ -194,7 +276,7 @@ export function createServerApp(ws: Workspace): {
     }
 
     const result = walkGraph(eventModelingGraph, from, direction, EVENT_MODELING_EDGE_TYPES, hops);
-    const collectedNodes = collectNodes(result.branches);
+    const collectedNodes = collectNodes(result.branches, nodeMap);
 
     res.json({
       fromNodeId: from,
@@ -202,22 +284,60 @@ export function createServerApp(ws: Workspace): {
       hops,
       branches: result.branches,
       nodes: collectedNodes,
-      edges: collectEdges(result.branches),
-      laneMap: laneMapForNodes(Object.keys(collectedNodes)),
+      edges: collectEdges(result.branches, edgeMap),
+      laneMap: laneMapForNodes(modelSnapshot, Object.keys(collectedNodes)),
     });
   });
 
   return {
     app,
     manifest,
-    nodeCount: nodes.length,
-    edgeCount: edges.length,
+    nodeCount: initialModel.nodes.length,
+    edgeCount: initialModel.edges.length,
   };
 }
 
 function parseBooleanQuery(value: unknown): boolean {
   if (Array.isArray(value)) return parseBooleanQuery(value[0]);
   return value === true || value === 'true' || value === '1';
+}
+
+function firstQueryValue(value: unknown): string | undefined {
+  if (Array.isArray(value)) return firstQueryValue(value[0]);
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function viewerProjectionRequest(req: express.Request) {
+  return {
+    draftId: firstQueryValue(req.query.draft),
+    graph: firstQueryValue(req.query.graph),
+    diff: firstQueryValue(req.query.diff),
+  };
+}
+
+function compactDiffChange(change: ReturnType<typeof buildViewerDiffChanges>[number]) {
+  const { before, after, changedFields, fieldChanges, ...compact } = change;
+  return compact;
+}
+
+function sendVisualizationError(res: express.Response, error: unknown): void {
+  if (error instanceof VisualizationSnapshotError) {
+    res.status(error.status).json({
+      error: {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      },
+    });
+    return;
+  }
+  const message = error instanceof Error ? error.message : 'Unknown server error';
+  res.status(500).json({
+    error: {
+      code: 'INTERNAL_ERROR',
+      message,
+    },
+  });
 }
 
 export function startServer(ws: Workspace, opts: { port?: number } = {}) {

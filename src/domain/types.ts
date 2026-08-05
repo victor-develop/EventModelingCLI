@@ -112,14 +112,48 @@ export interface Revision {
   message: string;
   createdAt: string;
   author: string;
+  submittedDraftId?: string;
+  validation?: {
+    valid: boolean;
+    errorCount: number;
+  };
+  diffSummary?: Record<string, number>;
+  contentFingerprint?: string;
+}
+
+export type DraftOpAction = 'add' | 'edit' | 'remove';
+
+export interface DraftOpTarget {
+  filePath: string;
+  nodeKind?: NodeKind;
+  edgeType?: EdgeType;
+  schemaKind?: 'command' | 'event' | 'viewModel';
+  ownerNodeId?: string;
+  fieldId?: string;
+  jsonPointer?: string;
 }
 
 export interface DraftOp {
   op: string;
-  entityType: 'node' | 'edge' | 'schema';
+  entityType: 'node' | 'edge' | 'schema' | 'proposal';
   entityId: string;
   timestamp: string;
   details?: Record<string, unknown>;
+  version?: 2;
+  opId?: string;
+  transactionId?: string;
+  seq?: number;
+  command?: string;
+  action?: DraftOpAction;
+  target?: DraftOpTarget;
+  before?: unknown;
+  after?: unknown;
+  changedFields?: string[];
+  references?: {
+    nodes?: string[];
+    edges?: string[];
+    schemas?: string[];
+  };
 }
 
 export interface ProposalOverride {
@@ -144,10 +178,21 @@ export interface Proposal {
   previousProposalId?: string;
 }
 
+export interface ModelSnapshot {
+  nodes: Node[];
+  edges: Edge[];
+  commandSchemas: CommandSchema[];
+  eventSchemas: EventSchema[];
+  viewModelSchemas: ViewModelSchema[];
+  proposals: Proposal[];
+}
+
 export interface Draft {
   id: string;
   projectId: string;
   baseRevisionId: string;
+  baseContentFingerprint?: string;
+  baseSnapshot?: ModelSnapshot;
   status: 'open' | 'submitted' | 'abandoned';
   message: string;
   ops: DraftOp[];

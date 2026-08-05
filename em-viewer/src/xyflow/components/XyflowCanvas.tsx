@@ -24,6 +24,7 @@ import { toReactFlowEdges, toReactFlowNodes } from '../adapter';
 import { edgeTypes } from '../adapter/edgeTypes';
 import { nodeTypes } from '../adapter/nodeTypes';
 import { guardNodeChanges } from '../interaction/nodeChangeGuard';
+import { DiffSelectionProvider } from './DiffSelectionContext';
 import { nodeVisualKindFromType } from './nodeVisualKind';
 
 interface XyflowCanvasProps {
@@ -32,6 +33,7 @@ interface XyflowCanvasProps {
   onOccurrenceReset?: (occurrenceId: string) => void;
   onExploreLeft?: () => void;
   onExploreRight?: () => void;
+  onDiffSelect?: (changeIds: string[]) => void;
 }
 
 const FIT_VIEW_OPTIONS = { padding: 0.1 };
@@ -48,6 +50,7 @@ export function XyflowCanvas({
   onOccurrenceReset,
   onExploreLeft,
   onExploreRight,
+  onDiffSelect,
 }: XyflowCanvasProps) {
   return (
     <ReactFlowProvider>
@@ -57,6 +60,7 @@ export function XyflowCanvas({
         onOccurrenceReset={onOccurrenceReset}
         onExploreLeft={onExploreLeft}
         onExploreRight={onExploreRight}
+        onDiffSelect={onDiffSelect}
       />
     </ReactFlowProvider>
   );
@@ -68,6 +72,7 @@ function XyflowCanvasInner({
   onOccurrenceReset,
   onExploreLeft,
   onExploreRight,
+  onDiffSelect,
 }: XyflowCanvasProps) {
   const [nodes, setNodes] = useState<Node[]>(() => toReactFlowNodes(snapshot, { includeFrontierHandles: true }));
   const [edges, setEdges] = useState<Edge[]>(() => toReactFlowEdges(snapshot));
@@ -183,27 +188,29 @@ function XyflowCanvasInner({
 
   return (
     <main className="xyflow-shell" aria-label="Event modeling canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onSelectionChange={onSelectionChange}
-        onNodeClick={onNodeClick}
-        onInit={onInit}
-        nodesDraggable
-        nodesConnectable={false}
-        elementsSelectable
-        minZoom={MIN_ZOOM}
-        maxZoom={MAX_ZOOM}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background gap={28} color="#d8d0bf" />
-        <Controls position="bottom-left" />
-        <MiniMap nodeColor={minimapNodeColor} pannable zoomable />
-      </ReactFlow>
+      <DiffSelectionProvider onSelect={onDiffSelect}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onSelectionChange={onSelectionChange}
+          onNodeClick={onNodeClick}
+          onInit={onInit}
+          nodesDraggable
+          nodesConnectable={false}
+          elementsSelectable
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={28} color="#d8d0bf" />
+          <Controls position="bottom-left" />
+          <MiniMap nodeColor={minimapNodeColor} pannable zoomable />
+        </ReactFlow>
+      </DiffSelectionProvider>
       <SelectionInspector
         selection={selection}
         onLock={() => lockSelectedNode('hard')}

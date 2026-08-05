@@ -48,6 +48,55 @@ function fb(flags: Record<string, string | boolean>, key: string): boolean {
   return v === true || v === 'true' || v === '1';
 }
 
+interface DataNodeRoute {
+  create: (ws: Workspace, id: string, displayName?: string) => CLIResult;
+  fieldAdd: (ws: Workspace, id: string, fieldId: string, name: string, type: string, flags: Record<string, unknown>) => CLIResult;
+  fieldEdit: (ws: Workspace, id: string, fieldId: string, updates: Record<string, unknown>) => CLIResult;
+  fieldRm: (ws: Workspace, id: string, fieldId: string) => CLIResult;
+  schemaInit: (ws: Workspace, id: string) => CLIResult;
+  schemaShow: (ws: Workspace, id: string) => CLIResult;
+}
+
+const DATA_NODE_ROUTES: Record<'cmd' | 'evt', DataNodeRoute> = {
+  cmd: {
+    create: cmd.cmdNew,
+    fieldAdd: cmd.cmdFieldAdd,
+    fieldEdit: cmd.cmdFieldEdit,
+    fieldRm: cmd.cmdFieldRm,
+    schemaInit: cmd.cmdSchemaInit,
+    schemaShow: cmd.cmdSchemaShow,
+  },
+  evt: {
+    create: cmd.evtNew,
+    fieldAdd: cmd.evtFieldAdd,
+    fieldEdit: cmd.evtFieldEdit,
+    fieldRm: cmd.evtFieldRm,
+    schemaInit: cmd.evtSchemaInit,
+    schemaShow: cmd.evtSchemaShow,
+  },
+};
+
+function routeDataNodeCommand(
+  ws: Workspace,
+  route: DataNodeRoute,
+  subgroup: string | undefined,
+  action: string | undefined,
+  positional: string[],
+  flags: Record<string, string | boolean>,
+): CLIResult | null {
+  if (subgroup === 'new') return route.create(ws, positional[2] ?? '', fs(flags, 'name') || undefined);
+  if (subgroup === 'field') {
+    if (action === 'add') return route.fieldAdd(ws, positional[3] ?? '', fs(flags, 'field-id'), fs(flags, 'name'), fs(flags, 'type'), { ...flags });
+    if (action === 'edit') return route.fieldEdit(ws, positional[3] ?? '', positional[4] ?? '', { ...flags });
+    if (action === 'rm') return route.fieldRm(ws, positional[3] ?? '', positional[4] ?? '');
+  }
+  if (subgroup === 'schema') {
+    if (action === 'init') return route.schemaInit(ws, positional[3] ?? '');
+    if (action === 'show') return route.schemaShow(ws, positional[3] ?? '');
+  }
+  return null;
+}
+
 export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
   const args = parseArgs(rawArgs);
   const { group, subgroup, action, positional, flags } = args;
@@ -68,12 +117,10 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
     case 'submit': return cmd.submit(ws, fs(flags, 'm'));
     case 'versions': return cmd.versions(ws);
     case 'checkout': return cmd.checkout(ws, positional[1] ?? '');
-    case 'cmd': {
-      if (subgroup === 'new') return cmd.cmdNew(ws, positional[2] ?? '', fs(flags, 'name') || undefined);
-      break;
-    }
+    case 'cmd':
     case 'evt': {
-      if (subgroup === 'new') return cmd.evtNew(ws, positional[2] ?? '', fs(flags, 'name') || undefined);
+      const result = routeDataNodeCommand(ws, DATA_NODE_ROUTES[group], subgroup, action, positional, flags);
+      if (result) return result;
       break;
     }
     case 'view': {

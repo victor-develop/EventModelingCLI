@@ -1,7 +1,7 @@
 import { buildGraph, resolveNodeId } from '../graph/graph-builder';
 import type { Graph } from '../graph/graph-builder';
 import { toEventModelingEdges } from '../domain/event-modeling-edges';
-import type { Node } from '../domain/types';
+import type { Edge, ModelSnapshot, Node } from '../domain/types';
 import type { LayoutState } from '../layout/types';
 import { LayoutEngine } from '../layout/layout-engine';
 import type { Workspace } from '../workspace/workspace';
@@ -22,11 +22,14 @@ import {
   collectDomainNodes,
 } from './envelope';
 import { resolveNodeLaneMap } from './laneAssignment';
+import { redactDiffValue } from './redaction';
 import type { SnapshotDirection, VisualizationSnapshot } from './types';
 import { VisualizationSnapshotError } from './types';
 
 export function buildVisualizationSnapshot(args: {
   workspace: Workspace;
+  modelSnapshot?: ModelSnapshot;
+  projectName?: string;
   focus: string;
   direction?: SnapshotDirection;
   hops?: number;
@@ -41,8 +44,9 @@ export function buildVisualizationSnapshot(args: {
     );
   }
 
-  const nodes = args.workspace.listNodes();
-  const edges = args.workspace.listEdges();
+  const nodes = args.modelSnapshot?.nodes ?? args.workspace.listNodes();
+  const edges = args.modelSnapshot?.edges ?? args.workspace.listEdges();
+  const projectName = args.projectName ?? manifest.name;
   const domainGraph = buildGraph(nodes, edges);
   const graph = buildGraph(nodes, toEventModelingEdges(edges));
   const allDomainNodes = collectCanonicalGraphNodes(domainGraph);
@@ -77,9 +81,9 @@ export function buildVisualizationSnapshot(args: {
   if (envelope.branches.length === 0) {
     const emptyLayoutState = createEmptyLayoutState();
     const laneDescriptors = createLaneDescriptors({ lanes: [], domainNodes: allDomainNodes });
-    return {
+    return redactSnapshotDomainData({
       focusNodeId: resolvedFocus,
-      projectName: manifest.name,
+      projectName,
       truncation: {
         includeTruncatedPaths,
         hiddenPathCount,
@@ -92,7 +96,7 @@ export function buildVisualizationSnapshot(args: {
       domainNodes: collectDomainNodes({ envelope, graph: domainGraph, focusNodeId: resolvedFocus }),
       domainEdges: {},
       laneMap: createVisibleLaneMap(laneDescriptors),
-    };
+    });
   }
 
   const engine = new LayoutEngine();
@@ -102,9 +106,9 @@ export function buildVisualizationSnapshot(args: {
   const occurrences = normalizeOccurrencesForViewer(coreOccurrences);
   const laneDescriptors = createLaneDescriptorsFromOccurrences(occurrences, allDomainNodes);
 
-  return {
+  return redactSnapshotDomainData({
     focusNodeId: resolvedFocus,
-    projectName: manifest.name,
+    projectName,
     truncation: {
       includeTruncatedPaths,
       hiddenPathCount,
@@ -117,6 +121,14 @@ export function buildVisualizationSnapshot(args: {
     domainNodes: collectDomainNodes({ envelope, graph: domainGraph, focusNodeId: resolvedFocus }),
     domainEdges: collectDomainEdges({ envelope, graph: domainGraph }),
     laneMap: createVisibleLaneMap(laneDescriptors),
+  });
+}
+
+function redactSnapshotDomainData(snapshot: VisualizationSnapshot): VisualizationSnapshot {
+  return {
+    ...snapshot,
+    domainNodes: redactDiffValue(snapshot.domainNodes) as Record<string, Node>,
+    domainEdges: redactDiffValue(snapshot.domainEdges) as Record<string, Edge>,
   };
 }
 

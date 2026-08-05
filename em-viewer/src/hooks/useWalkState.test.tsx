@@ -171,6 +171,41 @@ describe('useWalkState stateless layout navigation', () => {
       includeTruncatedPaths: true,
     });
   });
+
+  test('walk navigation preserves draft graph and diff context', () => {
+    const initial = snapshot([
+      occurrence('occ-root', 'returns.proc.public-api', 'shared', 0),
+      occurrence('occ-frontier', 'returns.cmd.lookup-order', 'cmd', 1),
+    ]);
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, {
+      onNavigate,
+      requestContext: {
+        focus: 'returns.proc.public-api',
+        direction: 'both',
+        hops: 2,
+        includeTruncatedPaths: false,
+        draft: 'draft_001',
+        graph: 'compare',
+        diff: 'overlay',
+      },
+    }));
+
+    act(() => {
+      result.current.walkRight();
+    });
+
+    expect(onNavigate).toHaveBeenCalledWith({
+      focus: 'returns.cmd.lookup-order',
+      direction: 'forward',
+      hops: 3,
+      includeTruncatedPaths: false,
+      draft: 'draft_001',
+      graph: 'compare',
+      diff: 'overlay',
+    });
+  });
 });
 
 function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = []): VisualizationSnapshot {

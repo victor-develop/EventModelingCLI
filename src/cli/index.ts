@@ -35,8 +35,9 @@ function main() {
     console.log('Usage: em <command> [args...] [flags]');
     console.log('');
     console.log('Commands:');
-    console.log('  project init <name>       Create a new project');
-    console.log('  project open <name>       Open an existing project');
+    console.log('  project init <name> [--path <repo-relative-dir>]  Create a new project');
+    console.log('  project open [name] [--path <repo-relative-dir>]  Open an existing project');
+    console.log('  project migrate --path <repo-relative-dir>         Copy active workspace to an embedded path');
     console.log('  ctx                       Show current context');
     console.log('  draft start --n <name>    Start a new draft');
     console.log('  cmd new <id>              Create a command node');
@@ -69,6 +70,12 @@ function main() {
       : undefined;
 
     const ws = new Workspace(process.cwd());
+    const resolutionError = ws.getResolutionError();
+    if (resolutionError) {
+      console.error(`Error: ${resolutionError.message}`);
+      console.error(`  Code: ${resolutionError.code}`);
+      process.exit(1);
+    }
     startServer(ws, { port });
     // startServer installs the long-lived HTTP server handle.
     return;

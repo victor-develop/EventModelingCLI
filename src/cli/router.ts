@@ -1,5 +1,7 @@
 import { Workspace } from '../workspace/workspace';
 import { CLIResult } from '../domain/types';
+import { UnsafeProjectPathError } from '../fs-model/path-conventions';
+import { WorkspaceLayoutError } from '../workspace/layout';
 import * as cmd from './commands';
 
 export interface ParsedArgs {
@@ -98,13 +100,44 @@ function routeDataNodeCommand(
 }
 
 export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
+  try {
+    return routeCommandInner(ws, rawArgs);
+  } catch (error) {
+    if (error instanceof WorkspaceLayoutError) {
+      return {
+        ok: false,
+        command: `em ${rawArgs.join(' ')}`,
+        data: {},
+        warnings: [],
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.targetPath ? { path: error.targetPath } : undefined,
+        },
+      };
+    }
+    if (error instanceof UnsafeProjectPathError) {
+      return {
+        ok: false,
+        command: `em ${rawArgs.join(' ')}`,
+        data: {},
+        warnings: [],
+        error: { code: 'UNSAFE_PROJECT_PATH', message: error.message },
+      };
+    }
+    throw error;
+  }
+}
+
+function routeCommandInner(ws: Workspace, rawArgs: string[]): CLIResult {
   const args = parseArgs(rawArgs);
   const { group, subgroup, action, positional, flags } = args;
 
   switch (group) {
     case 'project': {
-      if (subgroup === 'init') return cmd.projectInit(ws, positional.slice(2).join(' '));
-      if (subgroup === 'open') return cmd.projectOpen(ws, positional[2] ?? '');
+      if (subgroup === 'init') return cmd.projectInit(ws, positional.slice(2).join(' '), fs(flags, 'path') || undefined);
+      if (subgroup === 'open') return cmd.projectOpen(ws, positional[2] ?? '', fs(flags, 'path') || undefined);
+      if (subgroup === 'migrate') return cmd.projectMigrate(ws, fs(flags, 'path'));
       break;
     }
     case 'ctx': return cmd.ctx(ws);

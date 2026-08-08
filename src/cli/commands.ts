@@ -13,6 +13,7 @@ import type { SnapshotDirection } from '../viewer-contract';
 import { renderLayoutAscii, renderLayoutTable } from '../terminal-viewer';
 import { MutationRunner, requireMutationRunner } from '../drafts/mutation-runner';
 import { buildSemanticDiff } from '../drafts/diff';
+import { buildDraftImpactAnalysis } from '../drafts/impact';
 import {
   compareModelSnapshots,
   currentModelFingerprint,
@@ -1362,6 +1363,39 @@ export function emReview(ws: Workspace): CLIResult {
     },
     findings,
   }, { projectId: ws.getManifest()!.id, draftId: draft.id });
+}
+
+/**
+ * Review the net semantic impact of an entire draft rather than a single
+ * event or ViewModel field. The analysis deliberately runs from the draft's
+ * persisted base snapshot so it remains valid even when the working model is
+ * currently checked out elsewhere.
+ */
+export function reviewImpactDraft(ws: Workspace, draftId?: string): CLIResult {
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+
+  const draft = draftId ? ws.getDraft(draftId) : ws.getContext()?.draft;
+  if (!draft) {
+    return draftId
+      ? errResult('em review impact draft', 'DRAFT_NOT_FOUND', `Draft "${draftId}" not found`, {
+        projectId: ws.getManifest()!.id,
+        draftId,
+      })
+      : errResult('em review impact draft', 'NO_DRAFT', 'No active draft. Run em draft start.', {
+        projectId: ws.getManifest()!.id,
+      });
+  }
+  if (!draft.baseSnapshot) {
+    return errResult('em review impact draft', 'DRAFT_BASE_SNAPSHOT_MISSING', `Draft "${draft.id}" does not have a base model snapshot`, {
+      projectId: ws.getManifest()!.id,
+      draftId: draft.id,
+    });
+  }
+
+  return okResult('em review impact draft', {
+    impact: buildDraftImpactAnalysis(draft),
+  }, { projectId: ws.getManifest()!.id, draftId: draft.id, revisionId: draft.baseRevisionId });
 }
 
 export function reviewImpactEvt(ws: Workspace, evtId: string): CLIResult {

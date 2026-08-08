@@ -797,6 +797,30 @@ describe('Event Modeling CLI', () => {
       expect((r.data as any).consumers.ui).toContain('ui.screen.test-detail');
       expect((r.data as any).consumers.proc).toContain('order.proc.test-consumer');
     });
+
+    test('review impact draft returns the reusable net draft analysis', () => {
+      em('cmd', 'new', 'order.cmd.test-do');
+
+      const r = em('review', 'impact', 'draft');
+
+      expect(r.ok).toBe(true);
+      expect(r.command).toBe('em review impact draft');
+      expect((r.data as any).impact).toMatchObject({
+        draftId: 'draft_001',
+        baseRevisionId: 'rev_000',
+        summary: expect.objectContaining({ seedCount: 1 }),
+      });
+      expect((r.data as any).impact.seeds).toEqual([
+        expect.objectContaining({ entityType: 'node', status: 'added', nodeId: 'order.cmd.test-do' }),
+      ]);
+    });
+
+    test('review impact draft rejects an unknown explicit draft', () => {
+      const r = em('review', 'impact', 'draft', 'draft_missing');
+
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('DRAFT_NOT_FOUND');
+    });
   });
 
   describe('story proposal workflow', () => {

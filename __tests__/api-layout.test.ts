@@ -115,6 +115,34 @@ describe('/api/layout', () => {
     }
   });
 
+  test('/api/drafts/:draftId/impact exposes the shared draft-wide impact result', async () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const draft = saveViewerDraft(workspace);
+      const { app } = createServerApp(workspace);
+      server = app.listen(0);
+
+      const body = await getJson(server, `/api/drafts/${draft.id}/impact`);
+
+      expect(body.status).toBe(200);
+      expect(body.json.draft).toMatchObject({ id: draft.id, graph: 'compare', diff: 'overlay' });
+      expect(body.json.impact).toMatchObject({
+        draftId: draft.id,
+        baseRevisionId: 'rev_000',
+        seeds: expect.any(Array),
+        affectedNodes: expect.any(Object),
+        affectedEdges: expect.any(Array),
+        schemaImpacts: expect.any(Array),
+        compatibilityWarnings: expect.any(Array),
+        summary: expect.any(Object),
+        warnings: expect.any(Array),
+      });
+      expect(body.json.impact.seeds.map((seed: any) => seed.id)).toContain('node:removed:ui.pay-order-action');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('/api/layout renders draft compare overlay without changing layout contract shape', async () => {
     const { workspace, cleanup } = createOrderWorkspace();
     try {

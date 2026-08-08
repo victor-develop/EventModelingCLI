@@ -185,6 +185,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
     case 'roots': return cmd.roots(ws);
     case 'review': {
       if (subgroup === 'impact') {
+        if (action === 'draft') return cmd.reviewImpactDraft(ws, positional[3] || undefined);
         if (action === 'evt') return cmd.reviewImpactEvt(ws, positional[3] ?? '');
         if (action === 'field') return cmd.reviewImpactField(ws, positional[3] ?? '', positional[4] ?? '');
       }

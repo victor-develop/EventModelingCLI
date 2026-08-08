@@ -1,4 +1,5 @@
 import { Workspace } from '../workspace/workspace';
+import { WorkspaceLayoutError } from '../workspace/layout';
 import {
   CLIResult, okResult, errResult, Node, Draft, Proposal, EdgeType,
   CommandSchema, EventSchema, CommandField, EventField,
@@ -24,9 +25,17 @@ import {
 } from '../drafts/projection';
 
 function requireProject(ws: Workspace): { manifest: ReturnType<Workspace['getManifest']>; dir: string } | CLIResult {
+  const resolutionError = ws.getResolutionError();
+  if (resolutionError) return workspaceLayoutErrorResult('', resolutionError);
   const manifest = ws.getManifest();
   if (!manifest) return errResult('', 'NO_PROJECT', 'No active project. Run em project init or em project open.');
   return { manifest, dir: ws.getProjectDir()! };
+}
+
+function workspaceLayoutErrorResult(command: string, error: WorkspaceLayoutError): CLIResult {
+  return errResult(command, error.code, error.message, {
+    details: error.targetPath ? { path: error.targetPath } : undefined,
+  });
 }
 
 function requireDraft(ws: Workspace): { draft: Draft } | { error: CLIResult } {
@@ -145,36 +154,75 @@ function validateDraftMatchesModel(ws: Workspace, draft: Draft): CLIResult | nul
   });
 }
 
-export function projectInit(ws: Workspace, name: string): CLIResult {
-  const { projectDir, manifest } = ws.initProject(name);
-  return okResult('em project init', {
-    project: {
-      id: manifest.id,
-      name: manifest.name,
-      headRevisionId: manifest.headRevisionId,
-    },
-  }, { projectId: manifest.id });
+export function projectInit(ws: Workspace, name: string, requestedPath?: string): CLIResult {
+  try {
+    const { projectDir, manifest } = ws.initProject(name, requestedPath);
+    return okResult('em project init', {
+      project: {
+        id: manifest.id,
+        name: manifest.name,
+        headRevisionId: manifest.headRevisionId,
+        projectPath: projectDir,
+      },
+    }, { projectId: manifest.id });
+  } catch (error) {
+    if (error instanceof WorkspaceLayoutError) return workspaceLayoutErrorResult('em project init', error);
+    throw error;
+  }
 }
 
-export function projectOpen(ws: Workspace, idOrName: string): CLIResult {
-  const manifest = ws.openProject(idOrName);
-  if (!manifest) return errResult('em project open', 'NOT_FOUND', `Project "${idOrName}" not found`);
-  const revision = manifest.headRevisionId ? ws.getRevision(manifest.headRevisionId) : null;
-  return okResult('em project open', {
-    project: {
-      id: manifest.id,
-      name: manifest.name,
-      headRevisionId: manifest.headRevisionId,
-    },
-    currentRevision: revision ? { id: revision.id, message: revision.message } : null,
-  }, { projectId: manifest.id, revisionId: manifest.headRevisionId ?? undefined });
+export function projectOpen(ws: Workspace, idOrName: string, requestedPath?: string): CLIResult {
+  try {
+    const manifest = ws.openProject(idOrName, requestedPath);
+    if (!manifest) return errResult('em project open', 'NOT_FOUND', requestedPath
+      ? `Project not found at path "${requestedPath}"`
+      : `Project "${idOrName}" not found`);
+    const revision = manifest.headRevisionId ? ws.getRevision(manifest.headRevisionId) : null;
+    return okResult('em project open', {
+      project: {
+        id: manifest.id,
+        name: manifest.name,
+        headRevisionId: manifest.headRevisionId,
+        projectPath: ws.getProjectDir(),
+      },
+      currentRevision: revision ? { id: revision.id, message: revision.message } : null,
+    }, { projectId: manifest.id, revisionId: manifest.headRevisionId ?? undefined });
+  } catch (error) {
+    if (error instanceof WorkspaceLayoutError) return workspaceLayoutErrorResult('em project open', error);
+    throw error;
+  }
+}
+
+export function projectMigrate(ws: Workspace, requestedPath: string): CLIResult {
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  try {
+    const result = ws.migrateProject(requestedPath);
+    return okResult('em project migrate', {
+      project: { id: result.manifest.id, name: result.manifest.name },
+      sourcePath: result.sourceDir,
+      projectPath: result.projectDir,
+      copied: true,
+    }, { projectId: result.manifest.id });
+  } catch (error) {
+    if (error instanceof WorkspaceLayoutError) return workspaceLayoutErrorResult('em project migrate', error);
+    throw error;
+  }
 }
 
 export function ctx(ws: Workspace): CLIResult {
+  const resolutionError = ws.getResolutionError();
+  if (resolutionError) return workspaceLayoutErrorResult('em ctx', resolutionError);
   const c = ws.getContext();
   if (!c) return errResult('em ctx', 'NO_PROJECT', 'No active project');
   const result: Record<string, unknown> = {
     project: { id: c.project.id, name: c.project.name },
+    workspace: {
+      repositoryRoot: ws.getRepositoryRoot(),
+      projectPath: ws.getProjectDir(),
+      cachePath: ws.getCacheDir(),
+      contextPath: ws.getContextPath(),
+    },
     headRevision: c.project.headRevisionId ? { id: c.project.headRevisionId } : null,
     draft: null,
   };

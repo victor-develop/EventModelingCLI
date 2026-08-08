@@ -81,6 +81,8 @@ All commands should return a consistent top-level envelope.
 - Automation
 - Explore / Review
 
+[Embedded workspaces](CLI%20Command%20Reference/embedded%20workspaces.md)
+
 [em show](CLI%20Command%20Reference/em%20show%200f918fb4cf7d40dc9b5f2de599ac7651.md)
 
 [em neighbors](CLI%20Command%20Reference/em%20neighbors%2055b73ebd28d2407eb642baf66b70f57c.md)

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseYaml, stringifyYaml } from './yaml-utils';
+import { UnsafeProjectPathError } from './path-conventions';
 
 export function readYamlFile<T>(filePath: string): T | null {
   if (!fs.existsSync(filePath)) return null;
@@ -20,7 +21,9 @@ export function listYamlFiles(dirPath: string): string[] {
   const files: string[] = [];
   for (const entry of entries) {
     const full = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      throw new UnsafeProjectPathError(entry.name);
+    } else if (entry.isDirectory()) {
       files.push(...listYamlFiles(full));
     } else if (entry.name.endsWith('.yaml') || entry.name.endsWith('.yml')) {
       files.push(full);

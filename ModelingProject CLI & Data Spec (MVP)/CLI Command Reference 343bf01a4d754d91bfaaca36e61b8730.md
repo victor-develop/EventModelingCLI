@@ -95,6 +95,8 @@ All commands should return a consistent top-level envelope.
 
 [em review](CLI%20Command%20Reference/em%20review%2083488421b0224a0b92e062b6162e7009.md)
 
+[em review impact draft](CLI%20Command%20Reference/em%20review%20impact%20draft.md)
+
 [em review impact evt](CLI%20Command%20Reference/em%20review%20impact%20evt%200e865643b4bd4791aa66533114f82f8f.md)
 
 [em review impact field](CLI%20Command%20Reference/em%20review%20impact%20field%20cfaa1796fbbe47bcb8bd8428455a1912.md)

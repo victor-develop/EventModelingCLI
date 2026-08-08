@@ -10,6 +10,7 @@ import { buildVisualizationSnapshot, VisualizationSnapshotError } from '../viewe
 import type { SnapshotDirection } from '../viewer-contract';
 import { resolveNodeLaneMap } from '../viewer-contract/laneAssignment';
 import { buildSemanticDiff } from '../drafts/diff';
+import { buildDraftImpactAnalysis } from '../drafts/impact';
 import {
   currentModelSnapshot,
   modelSnapshotForDraftGraph,
@@ -145,6 +146,38 @@ export function createServerApp(ws: Workspace): {
         summary: buildSemanticDiff(draft).summary,
         changes: buildViewerDiffChanges(draft.baseSnapshot, afterSnapshot).map(compactDiffChange),
       },
+    });
+  });
+
+  app.get('/api/drafts/:draftId/impact', (req, res) => {
+    if (!manifest) {
+      sendNoProject(res);
+      return;
+    }
+
+    const draft = ws.getDraft(req.params.draftId);
+    if (!draft) {
+      res.status(404).json({
+        error: {
+          code: 'DRAFT_NOT_FOUND',
+          message: `Draft not found: ${req.params.draftId}`,
+        },
+      });
+      return;
+    }
+    if (!draft.baseSnapshot) {
+      res.status(400).json({
+        error: {
+          code: 'DRAFT_BASE_SNAPSHOT_MISSING',
+          message: `Draft "${draft.id}" does not have a base model snapshot`,
+        },
+      });
+      return;
+    }
+
+    res.json({
+      draft: draftContext(draft, 'compare', 'overlay'),
+      impact: buildDraftImpactAnalysis(draft),
     });
   });
 

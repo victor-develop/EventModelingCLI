@@ -314,8 +314,9 @@ function collectSeeds(
     });
   }
   for (const change of diff.edges) {
-    const edge = (change.after ?? change.before) as Edge | undefined;
-    if (!edge || !isEventModelingEdgeType(edge.type)) continue;
+    const beforeEdge = change.before as Edge | undefined;
+    const afterEdge = change.after as Edge | undefined;
+    if (!isEventModelingEdgeType(beforeEdge?.type as EdgeType) && !isEventModelingEdgeType(afterEdge?.type as EdgeType)) continue;
     seeds.push({
       id: `edge:${change.status}:${change.id}`,
       entityType: 'edge',
@@ -822,7 +823,9 @@ function eventFieldSourceMatches(graph: ImpactGraphView, change: SchemaFieldChan
   const eventId = canonicalNodeId(graph, field.source.eventNodeId) ?? field.source.eventNodeId;
   const changedEventId = canonicalNodeId(graph, change.nodeId) ?? change.nodeId;
   if (eventId !== changedEventId) return false;
-  const changedField = change.after ?? change.before;
+  const changedField = graph.name === 'base'
+    ? (change.before ?? change.after)
+    : (change.after ?? change.before);
   if (!changedField) return false;
   const sourcePath = normalizeSchemaPath(field.source.eventFieldPath);
   return sourcePath === normalizeSchemaPath(changedField.fieldId)

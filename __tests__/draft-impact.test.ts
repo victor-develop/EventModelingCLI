@@ -39,6 +39,25 @@ describe('draft-wide semantic impact analysis', () => {
     expect(impact.affectedEdges.map(edge => edge.id)).not.toContain('edge-ui-parent');
   });
 
+  test('keeps the base impact when an event-modeling edge is changed into a structural edge', () => {
+    const impact = buildDraftImpactAnalysis(createSemanticToStructuralEdgeDraft());
+    const edgeSeed = 'edge:changed:edge-command-event';
+
+    expect(impact.seeds).toEqual([
+      expect.objectContaining({
+        id: edgeSeed,
+        entityType: 'edge',
+        status: 'changed',
+        graph: 'both',
+        edgeId: 'edge-command-event',
+      }),
+    ]);
+    expect(impact.affectedNodes.commands.find(node => node.canonicalId === 'cmd.submit-order')?.changeIds).toContain(edgeSeed);
+    expect(impact.affectedNodes.events.find(node => node.canonicalId === 'evt.order-submitted')?.changeIds).toContain(edgeSeed);
+    expect(impact.affectedEdges.find(edge => edge.id === 'edge-command-event')?.graphs).toEqual(['base']);
+    expect(impact.affectedEdges.find(edge => edge.id === 'edge-command-event')?.types).toEqual(['commandCausesEvent']);
+  });
+
   test('uses changed event-modeling edge endpoints as flow seeds', () => {
     const impact = buildDraftImpactAnalysis(createImpactDraft());
     const edgeSeed = 'edge:changed:edge-command-event';
@@ -90,6 +109,18 @@ describe('draft-wide semantic impact analysis', () => {
     ]));
     expect(ids(impact.affectedNodes.uiSurfaces)).toContain('ui.result');
     expect(ids(impact.affectedNodes.processors)).toContain('proc.result-handler');
+  });
+
+  test('matches a renamed Event field against the old source path in the base graph', () => {
+    const impact = buildDraftImpactAnalysis(createRenamedEventFieldDraft());
+    const sourceImpact = impact.schemaImpacts.find(item => item.relationship === 'eventFieldToViewModelField');
+
+    expect(sourceImpact).toMatchObject({
+      source: { schemaKind: 'event', nodeId: 'evt.order-submitted', fieldId: 'orderId' },
+      target: { schemaKind: 'viewModel', nodeId: 'vm.order-detail', fieldId: 'f.order-id' },
+      graphs: ['base'],
+      certainty: 'explicit',
+    });
   });
 
   test('uses the base graph for removed ViewModel fields and preserves multiple seed reasons', () => {
@@ -182,6 +213,55 @@ function createImpactDraft(): Draft {
       op('node', 'ui.transient', node('ui.transient', 'ui.screen')),
       op('node', 'ui.transient', null),
     ],
+  };
+}
+
+function createSemanticToStructuralEdgeDraft(): Draft {
+  const base = createImpactDraft().baseSnapshot!;
+  const original = base.edges.find(item => item.id === 'edge-command-event')!;
+  return {
+    id: 'draft_edge_type_transition',
+    projectId,
+    baseRevisionId: 'rev_001',
+    baseSnapshot: base,
+    status: 'open',
+    message: 'semantic edge became structural',
+    proposals: [],
+    ops: [op('edge', original.id, { ...original, type: 'parentOf' })],
+  };
+}
+
+function createRenamedEventFieldDraft(): Draft {
+  const source = createImpactDraft().baseSnapshot!;
+  const originalSchema = source.eventSchemas[0]!;
+  const originalField = originalSchema.payload.fields[0]!;
+  const base: ModelSnapshot = {
+    ...source,
+    eventSchemas: [{
+      ...originalSchema,
+      payload: { fields: [{ ...originalField, name: 'legacyOrderId' }] },
+    }],
+    viewModelSchemas: source.viewModelSchemas.map(schema => schema.viewModelNodeId === 'vm.order-detail'
+      ? {
+        ...schema,
+        fields: schema.fields.map(field => field.fieldId === 'f.order-id'
+          ? { ...field, source: { ...field.source, eventFieldPath: 'payload.legacyOrderId' } }
+          : field),
+      }
+      : schema),
+  };
+  return {
+    id: 'draft_event_field_rename',
+    projectId,
+    baseRevisionId: 'rev_001',
+    baseSnapshot: base,
+    status: 'open',
+    message: 'event field renamed',
+    proposals: [],
+    ops: [schemaOp('event', originalSchema.eventNodeId, originalField.fieldId, {
+      ...originalField,
+      name: 'orderIdentifier',
+    })],
   };
 }
 

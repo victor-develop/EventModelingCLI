@@ -121,6 +121,7 @@ describe('draft-wide semantic impact analysis', () => {
       graphs: ['base'],
       certainty: 'explicit',
     });
+    expect(impact.compatibilityWarnings.map(warning => warning.code)).toContain('EVENT_FIELD_RENAMED');
   });
 
   test('uses the base graph for removed ViewModel fields and preserves multiple seed reasons', () => {

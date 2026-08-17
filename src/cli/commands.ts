@@ -16,6 +16,11 @@ import { MutationRunner, requireMutationRunner } from '../drafts/mutation-runner
 import { buildSemanticDiff } from '../drafts/diff';
 import { buildDraftImpactAnalysis } from '../drafts/impact';
 import {
+  assessEventFieldEvolution,
+  EventEvolutionAcknowledgement,
+  EventFieldEvolutionWarning,
+} from '../schema/event-evolution-policy';
+import {
   compareModelSnapshots,
   currentModelFingerprint,
   currentModelSnapshot,
@@ -987,13 +992,118 @@ function saveDataSchemaWithMutation(
   action: 'add' | 'edit' | 'remove',
   before: unknown | null,
   after: unknown | null,
-  options: { fieldId?: string; jsonPointer?: string; changedFields?: string[] } = {},
+  options: {
+    fieldId?: string;
+    jsonPointer?: string;
+    changedFields?: string[];
+    details?: Record<string, unknown>;
+  } = {},
 ): void {
   if (kind === 'command') {
     mutation.saveCommandSchema(schema as CommandSchema, action, before, after, options);
   } else {
     mutation.saveEventSchema(schema as EventSchema, action, before, after, options);
   }
+}
+
+const EVENT_FIELD_EDIT_FLAGS = new Set([
+  'name',
+  'type',
+  'required',
+  'optional',
+  'description',
+  'suppress-warning',
+]);
+
+function validateEventMutationFlags(
+  commandName: string,
+  flags: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+): CLIResult | null {
+  const unknown = Object.keys(flags).filter(key => !allowed.has(key)).sort();
+  if (unknown.length > 0) {
+    return errResult(commandName, 'UNKNOWN_FLAG', `Unknown flag: --${unknown[0]}`, {
+      details: { unknownFlags: unknown.map(flag => `--${flag}`) },
+    });
+  }
+  if (Object.prototype.hasOwnProperty.call(flags, 'suppress-warning') && flags['suppress-warning'] !== true) {
+    return errResult(commandName, 'INVALID_ARGUMENT', '--suppress-warning is a boolean flag and does not accept a value');
+  }
+  return null;
+}
+
+function validateEventFieldEditValues(commandName: string, updates: Record<string, unknown>): CLIResult | null {
+  for (const key of ['name', 'type', 'description'] as const) {
+    if (Object.prototype.hasOwnProperty.call(updates, key) && typeof updates[key] !== 'string') {
+      return errResult(commandName, 'INVALID_ARGUMENT', `--${key} requires a value`);
+    }
+  }
+  if (typeof updates.name === 'string' && updates.name.length === 0) {
+    return errResult(commandName, 'INVALID_ARGUMENT', '--name cannot be empty');
+  }
+  if (typeof updates.type === 'string' && updates.type.length === 0) {
+    return errResult(commandName, 'INVALID_ARGUMENT', '--type cannot be empty');
+  }
+  return null;
+}
+
+function eventEvolutionConfirmationRequired(
+  commandName: string,
+  warnings: EventFieldEvolutionWarning[],
+  projectId: string,
+  draftId: string,
+): CLIResult {
+  const first = warnings[0]!;
+  return errResult(
+    commandName,
+    'EVENT_SCHEMA_EVOLUTION_CONFIRMATION_REQUIRED',
+    'Changing an existing Event field may break consumers. Re-run interactively or pass --suppress-warning to acknowledge the risk.',
+    {
+      projectId,
+      draftId,
+      details: {
+        eventId: first.eventId,
+        fieldId: first.fieldId,
+        warningCodes: warnings.map(warning => warning.code),
+        before: eventFieldGuardSnapshot(first.before),
+        after: first.after ? eventFieldGuardSnapshot(first.after) : null,
+        warnings: warnings.map(warning => ({ code: warning.code, message: warning.message })),
+        recommendation: first.recommendation,
+      },
+    },
+  );
+}
+
+function eventFieldGuardSnapshot(field: EventField): Record<string, unknown> {
+  return {
+    fieldId: field.fieldId,
+    name: field.name,
+    type: field.type,
+    required: field.required,
+  };
+}
+
+function eventEvolutionGuardDetails(
+  warnings: EventFieldEvolutionWarning[],
+  acknowledgement: EventEvolutionAcknowledgement,
+): Record<string, unknown> {
+  return {
+    compatibilityGuard: {
+      acknowledged: true,
+      source: acknowledgement.source,
+      warningCodes: warnings.map(warning => warning.code),
+    },
+  };
+}
+
+function eventEvolutionAcknowledgementWarning(
+  warnings: EventFieldEvolutionWarning[],
+  acknowledgement: EventEvolutionAcknowledgement,
+): string {
+  const action = acknowledgement.source === 'suppress-warning'
+    ? 'explicitly bypassed with --suppress-warning'
+    : 'acknowledged by interactive confirmation';
+  return `Breaking Event evolution guard ${action}: ${warnings.map(warning => warning.code).join(', ')}. Draft Review will still report these compatibility warnings.`;
 }
 
 function dataSchemaOutput(kind: DataSchemaKind, canonicalId: string, schema: DataSchema): Record<string, unknown> {
@@ -1064,12 +1174,25 @@ function dataFieldAdd(
   }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
 }
 
-function dataFieldEdit(ws: Workspace, kind: DataSchemaKind, nodeId: string, fieldId: string, updates: Record<string, unknown>): CLIResult {
+function dataFieldEdit(
+  ws: Workspace,
+  kind: DataSchemaKind,
+  nodeId: string,
+  fieldId: string,
+  updates: Record<string, unknown>,
+  acknowledgement?: EventEvolutionAcknowledgement,
+): CLIResult {
   const commandName = dataSchemaCommand(kind, 'field', 'edit');
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
-  const mutation = mutationRunnerOrResult(ws, commandName);
-  if (isCliResult(mutation)) return mutation;
+  if (kind === 'event') {
+    const flagError = validateEventMutationFlags(commandName, updates, EVENT_FIELD_EDIT_FLAGS);
+    if (flagError) return flagError;
+    const valueError = validateEventFieldEditValues(commandName, updates);
+    if (valueError) return valueError;
+  }
+  const draftResult = requireDraft(ws);
+  if (!isDraftResult(draftResult)) return draftResult.error;
   const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
   if (isCliResult(node)) return node;
   const schema = readDataSchema(ws, kind, node.canonicalId);
@@ -1080,31 +1203,76 @@ function dataFieldEdit(ws: Workspace, kind: DataSchemaKind, nodeId: string, fiel
   if (!field) return errResult(commandName, 'NOT_FOUND', `Field "${fieldId}" not found`);
   const before = snapshot(field);
 
-  const name = typeof updates.name === 'string' && updates.name ? updates.name : field.name;
-  const type = typeof updates.type === 'string' && updates.type ? updates.type : field.type;
+  const name = typeof updates.name === 'string' ? updates.name : field.name;
+  const type = typeof updates.type === 'string' ? updates.type : field.type;
   const inputError = validateFieldInput(commandName, field.fieldId, name, type);
   if (inputError) return inputError;
-  field.name = name;
-  field.type = type;
   const required = requiredFromFlags(commandName, updates, field.required);
   if (isCliResult(required)) return required;
-  field.required = required;
-  if (typeof updates.description === 'string') field.description = updates.description;
+  const after: DataSchemaField = { ...field, name, type, required };
+  if (typeof updates.description === 'string') after.description = updates.description;
+  const changedFields = changedKeys(before, after);
 
-  saveDataSchemaWithMutation(mutation, kind, schema, 'edit', before, field, {
+  if (changedFields.length === 0) {
+    return okResult(commandName, {
+      [dataSchemaOwnerKey(kind)]: node.canonicalId,
+      field: after,
+      changed: false,
+    }, { projectId: ws.getManifest()!.id, draftId: draftResult.draft.id });
+  }
+
+  const evolutionWarnings = kind === 'event'
+    ? assessEventFieldEvolution(node.canonicalId, before as EventField, after as EventField)
+    : [];
+  if (evolutionWarnings.length > 0 && !acknowledgement) {
+    return eventEvolutionConfirmationRequired(
+      commandName,
+      evolutionWarnings,
+      ws.getManifest()!.id,
+      draftResult.draft.id,
+    );
+  }
+
+  const mutation = new MutationRunner(ws, draftResult.draft, commandName);
+  const nextFields = fields.map((current, index) => index === fieldIndex ? after : current);
+  replaceDataSchemaFields(schema, kind, nextFields);
+
+  saveDataSchemaWithMutation(mutation, kind, schema, 'edit', before, after, {
     fieldId,
     jsonPointer: schemaFieldPointer(kind, fieldIndex),
-    changedFields: changedKeys(before, field),
+    changedFields,
+    details: evolutionWarnings.length > 0 && acknowledgement
+      ? eventEvolutionGuardDetails(evolutionWarnings, acknowledgement)
+      : undefined,
   });
-  return okResult(commandName, { [dataSchemaOwnerKey(kind)]: node.canonicalId, field }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+  const result = okResult(commandName, {
+    [dataSchemaOwnerKey(kind)]: node.canonicalId,
+    field: after,
+    changed: true,
+  }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+  if (evolutionWarnings.length > 0 && acknowledgement) {
+    result.warnings.push(eventEvolutionAcknowledgementWarning(evolutionWarnings, acknowledgement));
+  }
+  return result;
 }
 
-function dataFieldRm(ws: Workspace, kind: DataSchemaKind, nodeId: string, fieldId: string): CLIResult {
+function dataFieldRm(
+  ws: Workspace,
+  kind: DataSchemaKind,
+  nodeId: string,
+  fieldId: string,
+  flags: Record<string, unknown> = {},
+  acknowledgement?: EventEvolutionAcknowledgement,
+): CLIResult {
   const commandName = dataSchemaCommand(kind, 'field', 'rm');
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;
-  const mutation = mutationRunnerOrResult(ws, commandName);
-  if (isCliResult(mutation)) return mutation;
+  if (kind === 'event') {
+    const flagError = validateEventMutationFlags(commandName, flags, new Set(['suppress-warning']));
+    if (flagError) return flagError;
+  }
+  const draftResult = requireDraft(ws);
+  if (!isDraftResult(draftResult)) return draftResult.error;
   const node = requireNodeKind(ws, commandName, nodeId, dataSchemaNodeKind(kind), dataSchemaLabel(kind));
   if (isCliResult(node)) return node;
   const schema = readDataSchema(ws, kind, node.canonicalId);
@@ -1113,16 +1281,36 @@ function dataFieldRm(ws: Workspace, kind: DataSchemaKind, nodeId: string, fieldI
   const fieldIndex = fields.findIndex(f => f.fieldId === fieldId);
   if (fieldIndex === -1) return errResult(commandName, 'NOT_FOUND', `Field "${fieldId}" not found`);
   const before = snapshot(fields[fieldIndex]);
+  const evolutionWarnings = kind === 'event'
+    ? assessEventFieldEvolution(node.canonicalId, before as EventField, null)
+    : [];
+  if (evolutionWarnings.length > 0 && !acknowledgement) {
+    return eventEvolutionConfirmationRequired(
+      commandName,
+      evolutionWarnings,
+      ws.getManifest()!.id,
+      draftResult.draft.id,
+    );
+  }
+
+  const mutation = new MutationRunner(ws, draftResult.draft, commandName);
   const nextFields = fields.filter(f => f.fieldId !== fieldId);
   replaceDataSchemaFields(schema, kind, nextFields);
   saveDataSchemaWithMutation(mutation, kind, schema, 'remove', before, null, {
     fieldId,
     jsonPointer: schemaFieldPointer(kind, fieldIndex),
+    details: evolutionWarnings.length > 0 && acknowledgement
+      ? eventEvolutionGuardDetails(evolutionWarnings, acknowledgement)
+      : undefined,
   });
-  return okResult(commandName, {
+  const result = okResult(commandName, {
     removedFieldId: fieldId,
     [dataSchemaOwnerKey(kind)]: node.canonicalId,
   }, { projectId: ws.getManifest()!.id, draftId: mutation.draftId });
+  if (evolutionWarnings.length > 0 && acknowledgement) {
+    result.warnings.push(eventEvolutionAcknowledgementWarning(evolutionWarnings, acknowledgement));
+  }
+  return result;
 }
 
 function dataSchemaShow(ws: Workspace, kind: DataSchemaKind, nodeId: string): CLIResult {
@@ -1155,16 +1343,28 @@ export function cmdFieldEdit(ws: Workspace, commandId: string, fieldId: string, 
   return dataFieldEdit(ws, 'command', commandId, fieldId, updates);
 }
 
-export function evtFieldEdit(ws: Workspace, eventId: string, fieldId: string, updates: Record<string, unknown>): CLIResult {
-  return dataFieldEdit(ws, 'event', eventId, fieldId, updates);
+export function evtFieldEdit(
+  ws: Workspace,
+  eventId: string,
+  fieldId: string,
+  updates: Record<string, unknown>,
+  acknowledgement?: EventEvolutionAcknowledgement,
+): CLIResult {
+  return dataFieldEdit(ws, 'event', eventId, fieldId, updates, acknowledgement);
 }
 
 export function cmdFieldRm(ws: Workspace, commandId: string, fieldId: string): CLIResult {
   return dataFieldRm(ws, 'command', commandId, fieldId);
 }
 
-export function evtFieldRm(ws: Workspace, eventId: string, fieldId: string): CLIResult {
-  return dataFieldRm(ws, 'event', eventId, fieldId);
+export function evtFieldRm(
+  ws: Workspace,
+  eventId: string,
+  fieldId: string,
+  flags: Record<string, unknown> = {},
+  acknowledgement?: EventEvolutionAcknowledgement,
+): CLIResult {
+  return dataFieldRm(ws, 'event', eventId, fieldId, flags, acknowledgement);
 }
 
 export function cmdSchemaShow(ws: Workspace, commandId: string): CLIResult {

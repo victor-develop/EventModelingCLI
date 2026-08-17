@@ -1,9 +1,103 @@
 #!/usr/bin/env node
+import { createInterface } from 'node:readline/promises';
 import { Workspace } from '../workspace/workspace';
 import { routeCommand } from './router';
 import { startServer } from './serve';
+import { CLIResult, errResult } from '../domain/types';
+import type { EventFieldEvolutionWarningCode } from '../schema/event-evolution-policy';
 
-function print(result: import('../domain/types').CLIResult) {
+export interface EventGuardTerminal {
+  stdinIsTTY: boolean;
+  stderrIsTTY: boolean;
+  writeStderr(text: string): void;
+  readLine(prompt: string): Promise<string | null>;
+}
+
+export async function executeRoutedCommand(
+  ws: Workspace,
+  rawArgs: string[],
+  terminal: EventGuardTerminal,
+): Promise<CLIResult> {
+  const preflight = routeCommand(ws, rawArgs);
+  if (preflight.error?.code !== 'EVENT_SCHEMA_EVOLUTION_CONFIRMATION_REQUIRED') return preflight;
+  if (!terminal.stdinIsTTY || !terminal.stderrIsTTY) return preflight;
+
+  terminal.writeStderr(formatEventEvolutionPrompt(preflight));
+  const answer = await terminal.readLine('Continue? [y/N] ');
+  const normalized = answer?.trim().toLowerCase();
+  if (normalized !== 'y' && normalized !== 'yes') {
+    return errResult(
+      preflight.command,
+      'EVENT_SCHEMA_EVOLUTION_CANCELLED',
+      'Event schema evolution cancelled; no changes were written.',
+      {
+        projectId: preflight.projectId,
+        draftId: preflight.draftId,
+        details: preflight.error.details,
+      },
+    );
+  }
+
+  const warningCodes = readWarningCodes(preflight);
+  return routeCommand(ws, rawArgs, {
+    mutationAcknowledgement: {
+      source: 'interactive-confirmation',
+      compatibilityWarningCodes: warningCodes,
+    },
+  });
+}
+
+function formatEventEvolutionPrompt(result: CLIResult): string {
+  const details = result.error?.details ?? {};
+  const eventId = safeDisplay(details.eventId);
+  const fieldId = safeDisplay(details.fieldId);
+  const before = fieldSummary(details.before);
+  const after = details.after === null ? 'removed' : fieldSummary(details.after);
+  const warningMessages = Array.isArray(details.warnings)
+    ? details.warnings
+      .map(item => item && typeof item === 'object' ? safeDisplay((item as Record<string, unknown>).message) : '')
+      .filter(Boolean)
+    : [];
+  const recommendation = safeDisplay(details.recommendation);
+  const reviewCodes = readWarningCodes(result).join(', ');
+  return [
+    '',
+    ...warningMessages.map(message => `Warning: ${message}`),
+    '',
+    `  Event:  ${eventId}`,
+    `  Field:  ${fieldId}`,
+    `  Before: ${before}`,
+    `  After:  ${after}`,
+    '',
+    recommendation,
+    '',
+    `This change will remain visible as ${reviewCodes} in Draft Review.`,
+  ].join('\n') + '\n';
+}
+
+function fieldSummary(value: unknown): string {
+  if (!value || typeof value !== 'object') return 'unknown';
+  const field = value as Record<string, unknown>;
+  return `name=${safeDisplay(field.name)}, type=${safeDisplay(field.type)}, required=${String(field.required === true)}`;
+}
+
+function safeDisplay(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return JSON.stringify(value).slice(1, -1);
+}
+
+function readWarningCodes(result: CLIResult): EventFieldEvolutionWarningCode[] {
+  const value = result.error?.details?.warningCodes;
+  if (!Array.isArray(value)) return [];
+  return value.filter((code): code is EventFieldEvolutionWarningCode => (
+    code === 'EVENT_FIELD_TYPE_CHANGED'
+    || code === 'EVENT_FIELD_REMOVED'
+    || code === 'EVENT_FIELD_REQUIREDNESS_CHANGED'
+    || code === 'EVENT_FIELD_RENAMED'
+  ));
+}
+
+function print(result: CLIResult) {
   if (result.ok) {
     if (
       typeof result.data?.output === 'string' &&
@@ -20,15 +114,20 @@ function print(result: import('../domain/types').CLIResult) {
       console.warn(`⚠ ${w}`);
     }
   } else {
+    if (result.error?.code === 'EVENT_SCHEMA_EVOLUTION_CONFIRMATION_REQUIRED') {
+      console.log(JSON.stringify(result, null, 2));
+      process.exitCode = 1;
+      return;
+    }
     console.error(`Error: ${result.error?.message ?? 'Unknown error'}`);
     if (result.error?.code) {
       console.error(`  Code: ${result.error.code}`);
     }
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 
-function main() {
+async function main() {
   const rawArgs = process.argv.slice(2);
 
   if (rawArgs.length === 0) {
@@ -59,7 +158,7 @@ function main() {
     console.log('  roots                      List flow root nodes');
     console.log('  validate                  Validate the model');
     console.log('');
-    process.exit(0);
+    return;
   }
 
   // 'serve' is long-running — handle before synchronous routeCommand
@@ -82,8 +181,28 @@ function main() {
   }
 
   const ws = new Workspace(process.cwd());
-  const result = routeCommand(ws, rawArgs);
+  const terminal: EventGuardTerminal = {
+    stdinIsTTY: process.stdin.isTTY === true,
+    stderrIsTTY: process.stderr.isTTY === true,
+    writeStderr: text => process.stderr.write(text),
+    readLine: async prompt => {
+      const readline = createInterface({ input: process.stdin, output: process.stderr });
+      try {
+        return await readline.question(prompt);
+      } catch {
+        return null;
+      } finally {
+        readline.close();
+      }
+    },
+  };
+  const result = await executeRoutedCommand(ws, rawArgs, terminal);
   print(result);
 }
 
-main();
+if (require.main === module) {
+  void main().catch(error => {
+    console.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    process.exitCode = 1;
+  });
+}

@@ -27,6 +27,13 @@ export interface MutationRecordOptions {
   details?: Record<string, unknown>;
 }
 
+interface SchemaMutationOptions {
+  fieldId?: string;
+  jsonPointer?: string;
+  changedFields?: string[];
+  details?: Record<string, unknown>;
+}
+
 export class MutationRunner {
   private readonly transactionId: string;
 
@@ -76,7 +83,7 @@ export class MutationRunner {
     action: DraftOpAction,
     before: unknown | null,
     after: unknown | null,
-    options: { fieldId?: string; jsonPointer?: string; changedFields?: string[] } = {},
+    options: SchemaMutationOptions = {},
   ): void {
     this.recordSchema('command', schema.commandNodeId, action, before, after, options, () => this.ws.saveCommandSchema(schema));
   }
@@ -86,7 +93,7 @@ export class MutationRunner {
     action: DraftOpAction,
     before: unknown | null,
     after: unknown | null,
-    options: { fieldId?: string; jsonPointer?: string; changedFields?: string[] } = {},
+    options: SchemaMutationOptions = {},
   ): void {
     this.recordSchema('event', schema.eventNodeId, action, before, after, options, () => this.ws.saveEventSchema(schema));
   }
@@ -96,7 +103,7 @@ export class MutationRunner {
     action: DraftOpAction,
     before: unknown | null,
     after: unknown | null,
-    options: { fieldId?: string; jsonPointer?: string; changedFields?: string[] } = {},
+    options: SchemaMutationOptions = {},
   ): void {
     this.recordSchema('viewModel', schema.viewModelNodeId, action, before, after, options, () => this.ws.saveViewModelSchema(schema));
   }
@@ -128,7 +135,7 @@ export class MutationRunner {
     action: DraftOpAction,
     before: unknown | null,
     after: unknown | null,
-    options: { fieldId?: string; jsonPointer?: string; changedFields?: string[] },
+    options: SchemaMutationOptions,
     applyWrite: () => void,
   ): void {
     const filePath = schemaKind === 'viewModel'
@@ -150,6 +157,7 @@ export class MutationRunner {
       after,
       changedFields: options.changedFields,
       references: { nodes: [ownerNodeId] },
+      details: options.details,
     }, applyWrite);
   }
 

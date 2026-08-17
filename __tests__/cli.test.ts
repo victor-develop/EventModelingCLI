@@ -552,7 +552,7 @@ describe('Event Modeling CLI', () => {
       expect(show.ok).toBe(true);
       expect(((show.data.payload as any).fields as any[]).length).toBe(1);
 
-      const rm = em('evt', 'field', 'rm', 'order.evt.charge.succeeded', 'status');
+      const rm = em('evt', 'field', 'rm', 'order.evt.charge.succeeded', 'status', '--suppress-warning');
       expect(rm.ok).toBe(true);
       expect((rm.data as any).removedFieldId).toBe('status');
     });

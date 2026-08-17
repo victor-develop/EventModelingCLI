@@ -2,6 +2,7 @@ import { Workspace } from '../workspace/workspace';
 import { CLIResult } from '../domain/types';
 import { UnsafeProjectPathError } from '../fs-model/path-conventions';
 import { WorkspaceLayoutError } from '../workspace/layout';
+import type { EventEvolutionAcknowledgement } from '../schema/event-evolution-policy';
 import * as cmd from './commands';
 
 export interface ParsedArgs {
@@ -10,6 +11,10 @@ export interface ParsedArgs {
   action?: string;
   positional: string[];
   flags: Record<string, string | boolean>;
+}
+
+export interface RouteCommandOptions {
+  mutationAcknowledgement?: EventEvolutionAcknowledgement;
 }
 
 export function parseArgs(args: string[]): ParsedArgs {
@@ -51,16 +56,30 @@ function fb(flags: Record<string, string | boolean>, key: string): boolean {
 }
 
 interface DataNodeRoute {
+  kind: 'command' | 'event';
   create: (ws: Workspace, id: string, displayName?: string) => CLIResult;
   fieldAdd: (ws: Workspace, id: string, fieldId: string, name: string, type: string, flags: Record<string, unknown>) => CLIResult;
-  fieldEdit: (ws: Workspace, id: string, fieldId: string, updates: Record<string, unknown>) => CLIResult;
-  fieldRm: (ws: Workspace, id: string, fieldId: string) => CLIResult;
+  fieldEdit: (
+    ws: Workspace,
+    id: string,
+    fieldId: string,
+    updates: Record<string, unknown>,
+    acknowledgement?: EventEvolutionAcknowledgement,
+  ) => CLIResult;
+  fieldRm: (
+    ws: Workspace,
+    id: string,
+    fieldId: string,
+    flags?: Record<string, unknown>,
+    acknowledgement?: EventEvolutionAcknowledgement,
+  ) => CLIResult;
   schemaInit: (ws: Workspace, id: string) => CLIResult;
   schemaShow: (ws: Workspace, id: string) => CLIResult;
 }
 
 const DATA_NODE_ROUTES: Record<'cmd' | 'evt', DataNodeRoute> = {
   cmd: {
+    kind: 'command',
     create: cmd.cmdNew,
     fieldAdd: cmd.cmdFieldAdd,
     fieldEdit: cmd.cmdFieldEdit,
@@ -69,6 +88,7 @@ const DATA_NODE_ROUTES: Record<'cmd' | 'evt', DataNodeRoute> = {
     schemaShow: cmd.cmdSchemaShow,
   },
   evt: {
+    kind: 'event',
     create: cmd.evtNew,
     fieldAdd: cmd.evtFieldAdd,
     fieldEdit: cmd.evtFieldEdit,
@@ -85,12 +105,16 @@ function routeDataNodeCommand(
   action: string | undefined,
   positional: string[],
   flags: Record<string, string | boolean>,
+  options: RouteCommandOptions,
 ): CLIResult | null {
   if (subgroup === 'new') return route.create(ws, positional[2] ?? '', fs(flags, 'name') || undefined);
   if (subgroup === 'field') {
     if (action === 'add') return route.fieldAdd(ws, positional[3] ?? '', fs(flags, 'field-id'), fs(flags, 'name'), fs(flags, 'type'), { ...flags });
-    if (action === 'edit') return route.fieldEdit(ws, positional[3] ?? '', positional[4] ?? '', { ...flags });
-    if (action === 'rm') return route.fieldRm(ws, positional[3] ?? '', positional[4] ?? '');
+    const acknowledgement = route.kind === 'event'
+      ? acknowledgementForEventMutation(flags, options)
+      : undefined;
+    if (action === 'edit') return route.fieldEdit(ws, positional[3] ?? '', positional[4] ?? '', { ...flags }, acknowledgement);
+    if (action === 'rm') return route.fieldRm(ws, positional[3] ?? '', positional[4] ?? '', { ...flags }, acknowledgement);
   }
   if (subgroup === 'schema') {
     if (action === 'init') return route.schemaInit(ws, positional[3] ?? '');
@@ -99,9 +123,17 @@ function routeDataNodeCommand(
   return null;
 }
 
-export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
+function acknowledgementForEventMutation(
+  flags: Record<string, string | boolean>,
+  options: RouteCommandOptions,
+): EventEvolutionAcknowledgement | undefined {
+  if (flags['suppress-warning'] === true) return { source: 'suppress-warning' };
+  return options.mutationAcknowledgement;
+}
+
+export function routeCommand(ws: Workspace, rawArgs: string[], options: RouteCommandOptions = {}): CLIResult {
   try {
-    return routeCommandInner(ws, rawArgs);
+    return routeCommandInner(ws, rawArgs, options);
   } catch (error) {
     if (error instanceof WorkspaceLayoutError) {
       return {
@@ -129,7 +161,7 @@ export function routeCommand(ws: Workspace, rawArgs: string[]): CLIResult {
   }
 }
 
-function routeCommandInner(ws: Workspace, rawArgs: string[]): CLIResult {
+function routeCommandInner(ws: Workspace, rawArgs: string[], options: RouteCommandOptions): CLIResult {
   const args = parseArgs(rawArgs);
   const { group, subgroup, action, positional, flags } = args;
 
@@ -152,7 +184,7 @@ function routeCommandInner(ws: Workspace, rawArgs: string[]): CLIResult {
     case 'checkout': return cmd.checkout(ws, positional[1] ?? '');
     case 'cmd':
     case 'evt': {
-      const result = routeDataNodeCommand(ws, DATA_NODE_ROUTES[group], subgroup, action, positional, flags);
+      const result = routeDataNodeCommand(ws, DATA_NODE_ROUTES[group], subgroup, action, positional, flags, options);
       if (result) return result;
       break;
     }

@@ -12,6 +12,7 @@ import type {
   ViewModelSchema,
 } from '../domain/types';
 import { isEventModelingEdgeType, toEventModelingEdges } from '../domain/event-modeling-edges';
+import { assessEventFieldEvolution } from '../schema/event-evolution-policy';
 import {
   diffModelSnapshots,
   modelSnapshotForDraftGraph,
@@ -97,6 +98,11 @@ export interface DraftCompatibilityWarning {
   fieldId: string;
   changeId: string;
   affectedNodeIds: string[];
+  acknowledgement?: {
+    acknowledged: true;
+    source: 'interactive-confirmation' | 'suppress-warning';
+    warningCodes: string[];
+  };
 }
 
 export interface DraftImpactAnalysis {
@@ -273,7 +279,7 @@ export function buildDraftImpactAnalysis(draft: Draft): DraftImpactAnalysis {
     }
   }
 
-  const compatibilityWarnings = collectCompatibilityWarnings(schemaFieldChanges, schemaTargets, warnings);
+  const compatibilityWarnings = collectCompatibilityWarnings(schemaFieldChanges, schemaTargets, warnings, draft);
 
   return {
     draftId: draft.id,
@@ -764,12 +770,14 @@ function collectCompatibilityWarnings(
   fieldChanges: SchemaFieldChange[],
   schemaTargets: Map<string, Set<string>>,
   informationalWarnings: Set<string>,
+  draft: Draft,
 ): DraftCompatibilityWarning[] {
   const warnings: DraftCompatibilityWarning[] = [];
   for (const fieldChange of fieldChanges) {
     const targets = [...(schemaTargets.get(schemaFieldKey(fieldChange.schemaKind, fieldChange.nodeId, fieldChange.fieldId)) ?? new Set<string>())].sort();
     const rules = compatibilityRulesFor(fieldChange);
     for (const rule of rules) {
+      const acknowledgement = compatibilityAcknowledgementFor(draft, fieldChange, rule.code);
       warnings.push({
         id: `${rule.code}:${fieldChange.schemaKind}:${fieldChange.nodeId}:${fieldChange.fieldId}`,
         code: rule.code,
@@ -780,6 +788,7 @@ function collectCompatibilityWarnings(
         fieldId: fieldChange.fieldId,
         changeId: fieldSeedId(fieldChange),
         affectedNodeIds: targets,
+        ...(acknowledgement ? { acknowledgement } : {}),
       });
     }
     if (rules.length > 0 && targets.length === 0 && (fieldChange.schemaKind === 'event' || fieldChange.schemaKind === 'viewModel')) {
@@ -789,8 +798,39 @@ function collectCompatibilityWarnings(
   return warnings.sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function compatibilityAcknowledgementFor(
+  draft: Draft,
+  change: SchemaFieldChange,
+  warningCode: string,
+): DraftCompatibilityWarning['acknowledgement'] | undefined {
+  if (change.schemaKind !== 'event') return undefined;
+  for (let index = draft.ops.length - 1; index >= 0; index -= 1) {
+    const op = draft.ops[index]!;
+    if (op.target?.schemaKind !== 'event') continue;
+    if (op.target.ownerNodeId !== change.nodeId || op.target.fieldId !== change.fieldId) continue;
+    const guard = op.details?.compatibilityGuard;
+    if (!guard || typeof guard !== 'object') continue;
+    const record = guard as Record<string, unknown>;
+    const source = record.source;
+    const warningCodes = Array.isArray(record.warningCodes)
+      ? record.warningCodes.filter((code): code is string => typeof code === 'string')
+      : [];
+    if (record.acknowledged !== true || !warningCodes.includes(warningCode)) continue;
+    if (source !== 'interactive-confirmation' && source !== 'suppress-warning') continue;
+    return { acknowledged: true, source, warningCodes };
+  }
+  return undefined;
+}
+
 function compatibilityRulesFor(change: SchemaFieldChange): Array<{ code: string; message: string }> {
   const label = `${change.schemaKind} field ${change.nodeId}.${change.fieldId}`;
+  if (change.schemaKind === 'event' && change.before) {
+    return assessEventFieldEvolution(
+      change.nodeId,
+      change.before as EventField,
+      change.after as EventField | null,
+    ).map(warning => ({ code: warning.code, message: warning.message }));
+  }
   if (change.status === 'removed') {
     return [{ code: `${schemaCodePrefix(change.schemaKind)}_FIELD_REMOVED`, message: `${label} was removed and may break existing consumers.` }];
   }

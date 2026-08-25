@@ -1,0 +1,4 @@
+interface:
+  display_name: "Develop Legacy with Event Modeling"
+  short_description: "Guide legacy changes through model-first drafts"
+  default_prompt: "Use $develop-legacy-with-event-modeling to plan and implement this legacy change through an Event Modeling Draft."

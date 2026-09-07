@@ -1,13 +1,26 @@
 {
-  "name": "em-cli",
+  "name": "event-modeling-spec-cli",
   "version": "0.1.0",
   "description": "ModelingProject Event Modeling CLI - file-based YAML architecture",
-  "main": "dist/index.js",
+  "main": "dist/cli/index.js",
   "bin": {
     "em": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-develop/EventModelingCLI.git"
+  },
+  "bugs": {
+    "url": "https://github.com/victor-develop/EventModelingCLI/issues"
+  },
+  "homepage": "https://github.com/victor-develop/EventModelingCLI#readme",
   "scripts": {
     "build": "tsc",
+    "prepack": "npm run build",
     "test": "jest --verbose",
     "test:watch": "jest --watch",
     "lint": "tsc --noEmit"

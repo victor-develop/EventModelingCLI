@@ -20,6 +20,15 @@ Use the Event Modeling CLI as a change-control loop around an existing codebase.
 
 ## Workflow
 
+### 0. Ensure the CLI prerequisite
+
+The Skill describes a workflow; it does not silently install arbitrary software. Before doing model work:
+
+1. Resolve an `em` executable from the target repository's checked-in scripts, a pinned local checkout, or an installed release of the companion CLI. Verify it with `em --help`.
+2. If the public npm release is available, install the exact package/version documented by the release README (the current candidate package name is `event-modeling-spec-cli`), globally or as a repository-local dev dependency.
+3. During prerelease or source-based use, pin a tag, commit, or tarball rather than relying on an unpinned branch.
+4. If no trusted CLI source is available, stop and report the prerequisite. Do not guess a package name, run an unknown installer, or continue with hand-edited model files as if the workflow were active.
+
 ### 1. Discover the repository and workspace
 
 1. Identify the repository root, build/test commands, service boundaries, API routes, transport adapters, persistence, and existing tests. Exclude secret and credential files from inspection.

@@ -5,6 +5,9 @@ dist/
 *.d.ts.map
 coverage/
 .env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
 .DS_Store
 .sisyphus/
-examples/

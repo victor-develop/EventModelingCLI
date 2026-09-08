@@ -1,0 +1,11 @@
+{
+  "extends": "./packages/cli/tsconfig.test.json",
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "rootDir": ".",
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {}
+  },
+  "include": ["packages/cli/src/**/*", "tests/integration/**/*", "tests/helpers/**/*", "apps/viewer/src/xyflow/adapter/**/*"]
+}

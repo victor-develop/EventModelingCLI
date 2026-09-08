@@ -1,42 +1,23 @@
 {
-  "name": "event-modeling-spec-cli",
+  "name": "event-modeling-cli-workspace",
+  "private": true,
   "version": "0.1.0",
-  "description": "ModelingProject Event Modeling CLI - file-based YAML architecture",
-  "main": "dist/cli/index.js",
-  "bin": {
-    "em": "dist/cli/index.js"
-  },
-  "files": [
-    "dist",
-    "README.md"
+  "license": "MIT",
+  "description": "Workspace for the Event Modeling CLI and viewer",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
   ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/victor-develop/EventModelingCLI.git"
-  },
-  "bugs": {
-    "url": "https://github.com/victor-develop/EventModelingCLI/issues"
-  },
-  "homepage": "https://github.com/victor-develop/EventModelingCLI#readme",
   "scripts": {
-    "build": "tsc",
-    "prepack": "npm run build",
-    "test": "jest --verbose",
-    "test:watch": "jest --watch",
-    "lint": "tsc --noEmit"
+    "build": "npm run build --workspace packages/cli && npm run build --workspace apps/viewer",
+    "test": "npm run test:cli && npm run test:viewer && npm run test:integration",
+    "test:cli": "npm run test --workspace packages/cli -- --runInBand",
+    "test:viewer": "npm run test:run --workspace apps/viewer",
+    "test:integration": "jest --config jest.integration.config.js --runInBand",
+    "lint": "npm run lint --workspace packages/cli && npm run lint --workspace apps/viewer",
+    "pack:cli": "npm pack --workspace packages/cli"
   },
-  "dependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "yaml": "^2.7.0"
-  },
-  "devDependencies": {
-    "@types/jest": "^29.5.14",
-    "@types/node": "^22.13.10",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.2.6",
-    "typescript": "^5.8.2"
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import type { EmptyWalkDirection } from '../hooks/useGraphData';
 
 interface WalkControlsProps {
   onWalkLeft: () => void;
@@ -6,6 +7,7 @@ interface WalkControlsProps {
   canWalkLeft: boolean;
   canWalkRight: boolean;
   isWalking: boolean;
+  emptyWalkDirection: EmptyWalkDirection;
   hops: number;
   minHops: number;
   maxHops: number;
@@ -21,6 +23,7 @@ export function WalkControls({
   canWalkLeft,
   canWalkRight,
   isWalking,
+  emptyWalkDirection,
   hops,
   minHops,
   maxHops,
@@ -77,6 +80,11 @@ export function WalkControls({
         <ChevronRight size={16} />
       </button>
       {isWalking && <span className="walk-status"><Loader2 size={14} /> Walking...</span>}
+      {!isWalking && emptyWalkDirection && (
+        <span className="walk-status walk-status-empty" role="status">
+          No further nodes in this direction
+        </span>
+      )}
     </div>
   );
 }

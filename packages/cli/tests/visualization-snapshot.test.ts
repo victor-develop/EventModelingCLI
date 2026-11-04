@@ -32,6 +32,79 @@ describe('buildVisualizationSnapshot', () => {
     }
   });
 
+  test('reports walk availability from graph boundaries instead of rendered truncation', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'ui.checkout',
+        direction: 'both',
+        hops: 1,
+      });
+      const checkout = snapshot.occurrences.find(
+        (occurrence) => occurrence.canonicalNodeId === 'ui.checkout',
+      );
+
+      expect(checkout).toBeDefined();
+      expect(snapshot.walkAvailability?.[checkout!.occurrenceId]).toEqual({
+        backward: false,
+        forward: true,
+      });
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('computes role command availability using the via surface walk semantics', () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const projectId = workspace.getManifest()!.id;
+      workspace.saveNode(node(projectId, 'role.buyer', 'role', 'Buyer'));
+      workspace.saveNode(node(projectId, 'ui.screen.return-portal', 'ui.screen', 'Return Portal'));
+      workspace.saveNode(node(projectId, 'returns.cmd.request-return', 'cmd', 'Request Return'));
+      workspace.saveNode(node(projectId, 'returns.evt.return-requested', 'evt', 'Return Requested'));
+      workspace.saveEdge(edge(
+        projectId,
+        'edge-buyer-request',
+        'roleIssuesCommand',
+        'role.buyer',
+        'returns.cmd.request-return',
+        'ui.screen.return-portal',
+      ));
+      workspace.saveEdge(edge(
+        projectId,
+        'edge-requested',
+        'commandCausesEvent',
+        'returns.cmd.request-return',
+        'returns.evt.return-requested',
+      ));
+
+      const snapshot = buildVisualizationSnapshot({
+        workspace,
+        focus: 'returns.cmd.request-return',
+        direction: 'both',
+        hops: 1,
+      });
+      const command = snapshot.occurrences.find(
+        (occurrence) => occurrence.canonicalNodeId === 'returns.cmd.request-return',
+      );
+      const surface = snapshot.occurrences.find(
+        (occurrence) => occurrence.canonicalNodeId === 'ui.screen.return-portal',
+      );
+
+      expect(snapshot.walkAvailability?.[command!.occurrenceId]).toEqual({
+        backward: true,
+        forward: true,
+      });
+      expect(snapshot.walkAvailability?.[surface!.occurrenceId]).toEqual({
+        backward: false,
+        forward: true,
+      });
+    } finally {
+      cleanup();
+    }
+  });
+
   test('throws a structured NOT_FOUND error for a missing focus', () => {
     const { workspace, cleanup } = createOrderWorkspace();
     try {

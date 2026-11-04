@@ -28,6 +28,22 @@ describe('xyflow adapter contract fixtures', () => {
     expect(toReactFlowNodes(snapshot, { includeFrontierHandles: true }).filter((node) => node.type === 'frontierHandle')).toHaveLength(2);
   });
 
+  test('omits frontier handles when the boundary node cannot walk in that direction', () => {
+    const caseRoot = path.join(ROOT, 'contract-tests-xyflow-adapter/tc01-minimal-linear-adapter');
+    const snapshot = readJsonFence<VisualizationSnapshot>(path.join(caseRoot, 'input-visualizationsnapshot.md'));
+    snapshot.walkAvailability = {
+      'occ-ui-checkout': { backward: true, forward: true },
+      'occ-cmd-submit-order': { backward: true, forward: true },
+      'occ-evt-order-submitted': { backward: true, forward: false },
+    };
+
+    const frontierIds = toReactFlowNodes(snapshot, { includeFrontierHandles: true })
+      .filter((node) => node.type === 'frontierHandle')
+      .map((node) => node.id);
+
+    expect(frontierIds).toEqual(['frontier:left']);
+  });
+
   test('applies an append patch without regenerating the full React Flow state', () => {
     const caseRoot = path.join(ROOT, 'contract-tests-layoutpatch-adapter/tc01-append-right-patch');
     const previous = readJsonFence<{ nodes: Node[]; edges: Edge[] }>(path.join(caseRoot, 'input-previous-react-flow-state.md'));

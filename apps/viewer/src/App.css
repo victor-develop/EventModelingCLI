@@ -362,6 +362,12 @@ button {
   min-width: 86px;
 }
 
+.walk-status-empty {
+  min-width: 0;
+  color: #765b32;
+  font-weight: 650;
+}
+
 .walk-status svg,
 .switching-spinner {
   animation: spin 0.8s linear infinite;

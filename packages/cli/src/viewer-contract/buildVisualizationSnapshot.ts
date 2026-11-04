@@ -1,6 +1,6 @@
-import { buildGraph, resolveNodeId } from '../graph/graph-builder';
+import { buildGraph, resolveNodeId, walkGraph } from '../graph/graph-builder';
 import type { Graph } from '../graph/graph-builder';
-import { toEventModelingEdges } from '../domain/event-modeling-edges';
+import { EVENT_MODELING_EDGE_TYPES, toEventModelingEdges } from '../domain/event-modeling-edges';
 import type { Edge, ModelSnapshot, Node } from '../domain/types';
 import type { LayoutState } from '../layout/types';
 import { LayoutEngine } from '../layout/layout-engine';
@@ -84,6 +84,7 @@ export function buildVisualizationSnapshot(args: {
     return redactSnapshotDomainData({
       focusNodeId: resolvedFocus,
       projectName,
+      walkAvailability: {},
       truncation: {
         includeTruncatedPaths,
         hiddenPathCount,
@@ -109,6 +110,7 @@ export function buildVisualizationSnapshot(args: {
   return redactSnapshotDomainData({
     focusNodeId: resolvedFocus,
     projectName,
+    walkAvailability: buildWalkAvailability(graph, occurrences),
     truncation: {
       includeTruncatedPaths,
       hiddenPathCount,
@@ -122,6 +124,31 @@ export function buildVisualizationSnapshot(args: {
     domainEdges: collectDomainEdges({ envelope, graph: domainGraph }),
     laneMap: createVisibleLaneMap(laneDescriptors),
   });
+}
+
+function buildWalkAvailability(
+  graph: Graph,
+  occurrences: VisualizationSnapshot['occurrences'],
+): VisualizationSnapshot['walkAvailability'] {
+  return Object.fromEntries(occurrences.map((occurrence) => [
+    occurrence.occurrenceId,
+    {
+      backward: walkGraph(
+        graph,
+        occurrence.canonicalNodeId,
+        'backward',
+        EVENT_MODELING_EDGE_TYPES,
+        1,
+      ).branches.length > 0,
+      forward: walkGraph(
+        graph,
+        occurrence.canonicalNodeId,
+        'forward',
+        EVENT_MODELING_EDGE_TYPES,
+        1,
+      ).branches.length > 0,
+    },
+  ]));
 }
 
 function redactSnapshotDomainData(snapshot: VisualizationSnapshot): VisualizationSnapshot {

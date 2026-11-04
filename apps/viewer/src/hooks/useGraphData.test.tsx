@@ -219,6 +219,41 @@ describe('useGraphData layout URL hydration', () => {
     expect(params.has('graph')).toBe(false);
     expect(params.has('diff')).toBe(false);
   });
+
+  test('reports an empty directional walk while restoring the previous snapshot', async () => {
+    window.history.replaceState(null, '', '/?focus=ui.screen.return-lookup&hops=2');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname === '/api/roots') return jsonResponse(rootsResponse());
+      if (url.pathname === '/api/drafts') return jsonResponse(draftsResponse());
+      if (url.pathname === '/api/layout') {
+        const focus = url.searchParams.get('focus') ?? 'ui.screen.return-lookup';
+        const direction = url.searchParams.get('direction');
+        return jsonResponse(snapshot(focus, {
+          empty: focus === 'ui.screen.return-detail' && direction === 'forward',
+        }));
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useGraphData());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      result.current.navigateLayout({
+        ...result.current.layoutRequest!,
+        focus: 'ui.screen.return-detail',
+        direction: 'forward',
+      }, 'push');
+    });
+
+    await waitFor(() => expect(result.current.emptyWalkDirection).toBe('forward'));
+    await waitFor(() => expect(result.current.layoutRequest?.focus).toBe('ui.screen.return-lookup'));
+
+    expect(result.current.data?.focusNodeId).toBe('ui.screen.return-lookup');
+    expect(new URLSearchParams(window.location.search).get('focus')).toBe('ui.screen.return-lookup');
+  });
 });
 
 function jsonResponse(body: unknown): Response {

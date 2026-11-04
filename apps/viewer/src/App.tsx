@@ -14,7 +14,18 @@ import { DiffDrawer } from './components/DiffDrawer';
 import { XyflowCanvas } from './xyflow/components/XyflowCanvas';
 
 function App() {
-  const { data, rootsData, draftsData, loading, switching, error, layoutRequest, navigateLayout, refocus } = useGraphData();
+  const {
+    data,
+    rootsData,
+    draftsData,
+    loading,
+    switching,
+    error,
+    emptyWalkDirection,
+    layoutRequest,
+    navigateLayout,
+    refocus,
+  } = useGraphData();
   const maxLayoutHops = maxLayoutHopsForRoots(rootsData);
   const currentHops = clampLayoutHops(layoutRequest?.hops ?? DEFAULT_LAYOUT_HOPS, maxLayoutHops);
   const {
@@ -169,6 +180,7 @@ function App() {
         canWalkLeft={canWalkLeft}
         canWalkRight={canWalkRight}
         isWalking={switching || isWalking}
+        emptyWalkDirection={emptyWalkDirection}
         hops={currentHops}
         minHops={MIN_LAYOUT_HOPS}
         maxHops={maxLayoutHops}

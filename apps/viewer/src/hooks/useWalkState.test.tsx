@@ -80,6 +80,52 @@ describe('useWalkState stateless layout navigation', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  test('disables backward walking when the left frontier has no incoming neighbor', () => {
+    const initial = snapshot([
+      occurrence('occ-frontier', 'returns.cmd.lookup-order', 'cmd', 0),
+      occurrence('occ-right-neighbor', 'returns.evt.order-verified', 'evt', 1),
+    ], [], {
+      'occ-frontier': { backward: false, forward: true },
+      'occ-right-neighbor': { backward: true, forward: true },
+    });
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, { onNavigate }));
+
+    expect(result.current.canWalkLeft).toBe(false);
+    expect(result.current.canWalkRight).toBe(true);
+
+    act(() => {
+      result.current.walkLeft();
+    });
+
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(result.current.walkCount).toBe(0);
+  });
+
+  test('disables forward walking when the right frontier has no outgoing neighbor', () => {
+    const initial = snapshot([
+      occurrence('occ-left-neighbor', 'ui.screen.return-lookup', 'shared', 0),
+      occurrence('occ-frontier', 'returns.cmd.lookup-order', 'cmd', 1),
+    ], [], {
+      'occ-left-neighbor': { backward: true, forward: true },
+      'occ-frontier': { backward: true, forward: false },
+    });
+    const onNavigate = vi.fn();
+
+    const { result } = renderHook(() => useWalkState(initial, { onNavigate }));
+
+    expect(result.current.canWalkLeft).toBe(true);
+    expect(result.current.canWalkRight).toBe(false);
+
+    act(() => {
+      result.current.walkRight();
+    });
+
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(result.current.walkCount).toBe(0);
+  });
+
   test('walkLeft ignores display-only role markers when selecting the frontier', () => {
     const initial = snapshot([
       roleOccurrence('occ-role-buyer', 'role.buyer', -1),
@@ -208,7 +254,11 @@ describe('useWalkState stateless layout navigation', () => {
   });
 });
 
-function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = []): VisualizationSnapshot {
+function snapshot(
+  occurrences: Occurrence[],
+  renderedEdges: RenderedEdge[] = [],
+  walkAvailability?: VisualizationSnapshot['walkAvailability'],
+): VisualizationSnapshot {
   const domainNodes = Object.fromEntries(
     occurrences.map((occ) => [occ.canonicalNodeId, domainNode(occ.canonicalNodeId, occ)]),
   );
@@ -217,6 +267,7 @@ function snapshot(occurrences: Occurrence[], renderedEdges: RenderedEdge[] = [])
   return {
     focusNodeId: occurrences[0]?.canonicalNodeId ?? 'ui.screen.empty',
     projectName: 'Returns Management',
+    walkAvailability,
     truncation: {
       includeTruncatedPaths: false,
       hiddenPathCount: 0,

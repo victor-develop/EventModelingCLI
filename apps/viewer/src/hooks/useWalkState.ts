@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback } from 'react';
 import type { VisualizationSnapshot } from 'event-modeling-spec-cli/viewer-contract/types';
 import type { LayoutRequest } from './layoutRequest';
 import { WALK_LAYOUT_HOPS, clampLayoutHops, walkLayoutRequest } from './layoutRequest';
+import { canWalkDirection, findWalkFrontier } from './walkFrontier';
 
 interface UseWalkStateResult {
   snapshot: VisualizationSnapshot | null;
@@ -42,20 +43,13 @@ export function useWalkState(
   const snapshot = useMemo(() => (
     draft?.base === initData ? draft.snapshot : initData
   ), [draft, initData]);
-  const hasNavigableOccurrences = Boolean(snapshot?.occurrences.some(isNavigableOccurrence));
+  const canWalkLeft = useMemo(() => canWalkDirection(snapshot, 'backward'), [snapshot]);
+  const canWalkRight = useMemo(() => canWalkDirection(snapshot, 'forward'), [snapshot]);
 
   const walk = useCallback((direction: 'forward' | 'backward') => {
     if (!snapshot || !onNavigate) return;
-    const preferHighStage = direction === 'forward';
-    const occs = snapshot.occurrences.filter(isNavigableOccurrence);
-    if (occs.length === 0) return;
-
-    const sorted = [...occs].sort((a, b) => (
-      preferHighStage
-        ? (b.stageIndex - a.stageIndex) || (b.x - a.x)
-        : (a.stageIndex - b.stageIndex) || (a.x - b.x)
-    ));
-    const frontier = sorted[0];
+    if (!canWalkDirection(snapshot, direction)) return;
+    const frontier = findWalkFrontier(snapshot, direction);
     if (!frontier) return;
 
     onNavigate(walkLayoutRequest(
@@ -111,15 +105,11 @@ export function useWalkState(
     walkRight,
     setOccurrenceLock,
     resetOccurrencePosition,
-    canWalkLeft: hasNavigableOccurrences,
-    canWalkRight: hasNavigableOccurrences,
+    canWalkLeft,
+    canWalkRight,
     walkCount,
     isWalking: false,
   };
-}
-
-function isNavigableOccurrence(occurrence: VisualizationSnapshot['occurrences'][number]): boolean {
-  return occurrence.displayRole !== 'role';
 }
 
 function updateOccurrenceLock(

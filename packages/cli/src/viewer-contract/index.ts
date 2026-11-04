@@ -41,5 +41,6 @@ export type {
   SnapshotGraphMode,
   ViewerDiffChange,
   ViewerDiffEntityType,
+  WalkAvailability,
 } from './types';
 export { VisualizationSnapshotError } from './types';

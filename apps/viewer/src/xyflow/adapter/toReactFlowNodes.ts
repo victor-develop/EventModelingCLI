@@ -2,6 +2,7 @@ import type { Node } from '@xyflow/react';
 import type { Node as DomainNode } from 'event-modeling-spec-cli/domain/types';
 import type { Occurrence, SwimlaneRect } from 'event-modeling-spec-cli/layout/types';
 import type { VisualizationSnapshot } from 'event-modeling-spec-cli/viewer-contract/types';
+import { canWalkDirection } from '../../hooks/walkFrontier';
 import {
   createLaneDescriptors,
   getSnapshotLaneDescriptors,
@@ -141,9 +142,10 @@ function toFrontierHandleNodes(snapshot: VisualizationSnapshot): Node<FrontierHa
   const minX = Math.min(...snapshot.occurrences.map((occurrence) => occurrence.x));
   const maxX = Math.max(...snapshot.occurrences.map((occurrence) => occurrence.x + occurrence.width));
   const midY = swimlaneMidpoint(snapshot.swimlaneRects);
+  const nodes: Node<FrontierHandleData>[] = [];
 
-  return [
-    {
+  if (canWalkDirection(snapshot, 'backward')) {
+    nodes.push({
       id: 'frontier:left',
       type: 'frontierHandle',
       position: { x: minX - 96, y: midY },
@@ -152,8 +154,11 @@ function toFrontierHandleNodes(snapshot: VisualizationSnapshot): Node<FrontierHa
       selectable: false,
       connectable: false,
       zIndex: 4,
-    },
-    {
+    });
+  }
+
+  if (canWalkDirection(snapshot, 'forward')) {
+    nodes.push({
       id: 'frontier:right',
       type: 'frontierHandle',
       position: { x: maxX + 52, y: midY },
@@ -162,8 +167,10 @@ function toFrontierHandleNodes(snapshot: VisualizationSnapshot): Node<FrontierHa
       selectable: false,
       connectable: false,
       zIndex: 4,
-    },
-  ];
+    });
+  }
+
+  return nodes;
 }
 
 function swimlaneMidpoint(swimlaneRects: SwimlaneRect[]): number {

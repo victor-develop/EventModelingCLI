@@ -67,12 +67,18 @@ export type LaneDescriptor = {
   sourceNodeId?: string;
 };
 
+export type WalkAvailability = {
+  backward: boolean;
+  forward: boolean;
+};
+
 export type VisualizationSnapshot = {
   focusNodeId: string;
   projectName: string;
   draft?: DraftContext;
   focusResolution?: FocusResolution;
   diffOverlay?: DiffOverlay;
+  walkAvailability?: Record<string, WalkAvailability>;
   truncation: {
     includeTruncatedPaths: boolean;
     hiddenPathCount: number;

@@ -50,6 +50,7 @@ export interface DraftsResponse {
 }
 
 type NavigateMode = 'push' | 'replace';
+export type EmptyWalkDirection = 'forward' | 'backward' | null;
 
 export function useGraphData() {
   const [data, setData] = useState<VisualizationSnapshot | null>(null);
@@ -59,6 +60,7 @@ export function useGraphData() {
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emptyWalkDirection, setEmptyWalkDirection] = useState<EmptyWalkDirection>(null);
   const successfulRequestRef = useRef<LayoutRequest | null>(null);
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export function useGraphData() {
 
   const navigateLayout = useCallback((request: LayoutRequest, mode: NavigateMode = 'push') => {
     setError(null);
+    setEmptyWalkDirection(null);
     if (successfulRequestRef.current) setSwitching(true);
     else setLoading(true);
     writeLayoutRequestToLocation(request, mode);
@@ -134,6 +137,8 @@ export function useGraphData() {
       .then(layoutResp => {
         if (cancelled) return;
         const fallback = successfulRequestRef.current;
+        const emptyDirection = getEmptyWalkDirection(layoutRequest, layoutResp);
+        if (emptyDirection) setEmptyWalkDirection(emptyDirection);
         if (fallback && shouldRestorePreviousRequest(layoutRequest, layoutResp, fallback)) {
           writeLayoutRequestToLocation(fallback, 'replace');
           setLayoutRequest(fallback);
@@ -165,6 +170,7 @@ export function useGraphData() {
       if (successfulRequestRef.current) setSwitching(true);
       else setLoading(true);
       setError(null);
+      setEmptyWalkDirection(null);
       const urlRequest = readLayoutRequestFromLocation(
         rootsData.roots[0]?.canonicalId,
         maxLayoutHopsForRoots(rootsData),
@@ -186,6 +192,7 @@ export function useGraphData() {
     loading,
     switching,
     error,
+    emptyWalkDirection,
     layoutRequest,
     draftsData,
     navigateLayout,
@@ -247,11 +254,16 @@ function shouldRestorePreviousRequest(
   snapshot: VisualizationSnapshot,
   fallback: LayoutRequest,
 ): boolean {
-  return isEmptyDirectionalWalk(request, snapshot) && hasSameViewContext(request, fallback);
+  return getEmptyWalkDirection(request, snapshot) !== null &&
+    hasSameViewContext(request, fallback);
 }
 
-function isEmptyDirectionalWalk(request: LayoutRequest, snapshot: VisualizationSnapshot): boolean {
-  return request.direction !== 'both' && snapshot.occurrences.length === 0;
+function getEmptyWalkDirection(
+  request: LayoutRequest,
+  snapshot: VisualizationSnapshot,
+): Exclude<EmptyWalkDirection, null> | null {
+  if (request.direction === 'both' || snapshot.occurrences.length > 0) return null;
+  return request.direction ?? null;
 }
 
 function hasSameViewContext(left: LayoutRequest, right: LayoutRequest): boolean {

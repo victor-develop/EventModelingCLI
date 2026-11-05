@@ -569,6 +569,18 @@ button {
   opacity: 0.76;
 }
 
+.is-compare-overlay .em-node:not(.diff-added):not(.diff-changed):not(.diff-removed) {
+  opacity: 0.58;
+  filter: saturate(0.7);
+  box-shadow: 0 5px 14px rgba(34, 42, 38, 0.06);
+}
+
+.is-compare-overlay .em-node:not(.diff-added):not(.diff-changed):not(.diff-removed).is-selected {
+  opacity: 1;
+  filter: none;
+  box-shadow: 0 0 0 3px rgba(28, 124, 125, 0.18), 0 8px 20px rgba(34, 42, 38, 0.12);
+}
+
 .em-role-marker {
   min-height: 56px;
   border-color: rgba(86, 96, 150, 0.36);
@@ -763,6 +775,16 @@ button {
   stroke-dasharray: 8 6;
   opacity: 0.76;
   cursor: pointer;
+}
+
+.is-compare-overlay .em-edge-path:not(.diff-added):not(.diff-changed):not(.diff-removed) {
+  opacity: 0.34;
+  filter: saturate(0.72);
+}
+
+.is-compare-overlay .em-edge-path:not(.diff-added):not(.diff-changed):not(.diff-removed).is-selected {
+  opacity: 1;
+  filter: none;
 }
 
 .em-edge-path.is-selected {

@@ -346,6 +346,7 @@ describe('Event Modeling CLI', () => {
       em('cmd', 'new', 'order.payment.cmd.capture-charge');
       em('evt', 'new', 'order.payment.evt.charge.succeeded');
       em('view', 'new', 'order.payment.view.charge.detail');
+      em('proc', 'new', 'order.payment.proc.charge-validator');
     });
 
     test('link cmd->evt', () => {
@@ -358,6 +359,14 @@ describe('Event Modeling CLI', () => {
       const r = em('link', 'evt->view', 'order.payment.evt.charge.succeeded', 'order.payment.view.charge.detail');
       expect(r.ok).toBe(true);
       expect((r.data.edge as any).type).toBe('eventRefreshesViewModel');
+    });
+
+    test('link evt->proc', () => {
+      const r = em('link', 'evt->proc', 'order.payment.evt.charge.succeeded', 'order.payment.proc.charge-validator');
+      expect(r.ok).toBe(true);
+      expect((r.data.edge as any).type).toBe('eventUpdatesProcessor');
+      expect((r.data.edge as any).fromNodeId).toBe('order.payment.evt.charge.succeeded');
+      expect((r.data.edge as any).toNodeId).toBe('order.payment.proc.charge-validator');
     });
   });
 

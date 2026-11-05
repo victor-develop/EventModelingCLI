@@ -231,6 +231,33 @@ describe('/api/layout', () => {
     }
   });
 
+  test('/api/layout compare mode accepts an added after-only focus', async () => {
+    const { workspace, cleanup } = createOrderWorkspace();
+    try {
+      const draft = saveViewerDraft(workspace);
+      const { app } = createServerApp(workspace);
+      server = app.listen(0);
+      for (const graph of ['compare', 'after']) {
+        const body = await getJson(server, `/api/layout?focus=ui.order-confirmation&direction=both&hops=2&draft=${draft.id}&graph=${graph}&diff=overlay`);
+
+        expect(body.status).toBe(200);
+        expect(body.json.focusNodeId).toBe('ui.order-confirmation');
+        expect(body.json.focusResolution).toMatchObject({
+          requestedFocus: 'ui.order-confirmation',
+          resolvedFocus: 'ui.order-confirmation',
+          availability: 'afterOnly',
+        });
+        expect(body.json.truncation.hiddenPathCount).toBeGreaterThan(0);
+        expect(body.json.occurrences.map((occurrence: any) => occurrence.canonicalNodeId)).toContain('ui.order-confirmation');
+        expect(body.json.domainNodes['ui.order-confirmation']).toBeDefined();
+        expect(body.json.diffOverlay.nodesByCanonicalId['ui.order-confirmation'].status).toBe('added');
+        expect(body.json.diffOverlay.edgesById['edge-vm-to-confirmation'].status).toBe('added');
+      }
+    } finally {
+      cleanup();
+    }
+  });
+
   test('/api/layout base overlay does not mark after-only edges as visible', async () => {
     const { workspace, cleanup } = createOrderWorkspace();
     try {

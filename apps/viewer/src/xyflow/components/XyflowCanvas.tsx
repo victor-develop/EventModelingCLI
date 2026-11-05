@@ -24,6 +24,7 @@ import { toReactFlowEdges, toReactFlowNodes } from '../adapter';
 import { edgeTypes } from '../adapter/edgeTypes';
 import { nodeTypes } from '../adapter/nodeTypes';
 import { guardNodeChanges } from '../interaction/nodeChangeGuard';
+import { isCompareOverlayActive } from '../diffOverlayPresentation';
 import { DiffSelectionProvider } from './DiffSelectionContext';
 import { nodeVisualKindFromType } from './nodeVisualKind';
 
@@ -186,8 +187,10 @@ function XyflowCanvasInner({
     return NODE_COLORS[nodeVisualKindFromType(node.type)] ?? NODE_COLORS.shared;
   }, []);
 
+  const compareOverlayClass = isCompareOverlayActive(snapshot) ? ' is-compare-overlay' : '';
+
   return (
-    <main className="xyflow-shell" aria-label="Event modeling canvas">
+    <main className={`xyflow-shell${compareOverlayClass}`} aria-label="Event modeling canvas">
       <DiffSelectionProvider onSelect={onDiffSelect}>
         <ReactFlow
           nodes={nodes}

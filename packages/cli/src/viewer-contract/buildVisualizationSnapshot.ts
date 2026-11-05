@@ -17,6 +17,7 @@ import {
 } from './normalize';
 import {
   applyTruncatedPathPolicy,
+  buildEnvelopeFromWalkBranches,
   buildWalkEnvelope,
   collectDomainEdges,
   collectDomainNodes,
@@ -71,12 +72,26 @@ export function buildVisualizationSnapshot(args: {
     hops,
     laneMap: nodeLaneMap,
   });
-  const { envelope, hiddenPathCount } = applyTruncatedPathPolicy({
+  const { envelope: walkedEnvelope, hiddenPathCount } = applyTruncatedPathPolicy({
     envelope: unfilteredEnvelope,
     graph,
     focusNodeId: resolvedFocus,
     includeTruncatedPaths,
   });
+  // Keep the requested node visible when truncation removes every reachable path.
+  const envelope = walkedEnvelope.branches.length > 0
+    ? walkedEnvelope
+    : buildEnvelopeFromWalkBranches({
+        graph,
+        focusNodeId: resolvedFocus,
+        branches: [{
+          path: [{
+            nodeId: resolvedFocus,
+            nodeKind: graph.nodes.get(resolvedFocus)!.kind,
+          }],
+        }],
+        laneMap: nodeLaneMap,
+      });
 
   if (envelope.branches.length === 0) {
     const emptyLayoutState = createEmptyLayoutState();

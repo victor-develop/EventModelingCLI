@@ -340,6 +340,15 @@ console.log('\n=== Phase 8: Graph Commands ===');
   );
 }
 
+{
+  const r = run(ws, 'em layout --focus ui.form.booking-form --direction backward --hops 2 --format json');
+  assert(r !== null, 'layout from the UI form succeeds');
+  assert(
+    r?.data?.occurrences?.some((occurrence: any) => occurrence.canonicalNodeId === 'ui.form.booking-form'),
+    'a truncated UI-form focus still renders the focus node',
+  );
+}
+
 // ========== PHASE 9: Draft Status & Validate ==========
 console.log('\n=== Phase 9: Draft Status & Validate ===');
 

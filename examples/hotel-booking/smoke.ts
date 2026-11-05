@@ -53,56 +53,56 @@ console.log('=== Phase 1: Project Setup ===');
 console.log('\n=== Phase 2: Create Nodes ===');
 
 {
-  const r = run(ws, 'em cmd new hotel.cmd.BookRoom');
+  const r = run(ws, 'em cmd new hotel.cmd.book-room');
   assert(r !== null, 'cmd new BookRoom succeeds');
-  assert(r?.data?.node?.canonicalId === 'hotel.cmd.BookRoom', 'BookRoom canonicalId correct');
+  assert(r?.data?.node?.canonicalId === 'hotel.cmd.book-room', 'BookRoom canonicalId correct');
   assert(r?.data?.node?.kind === 'cmd', 'BookRoom kind is cmd');
 }
 
 {
-  const r = run(ws, 'em cmd new hotel.cmd.CancelBooking');
+  const r = run(ws, 'em cmd new hotel.cmd.cancel-booking');
   assert(r !== null, 'cmd new CancelBooking succeeds');
 }
 
 {
-  const r = run(ws, 'em cmd new hotel.cmd.Checkout');
+  const r = run(ws, 'em cmd new hotel.cmd.checkout');
   assert(r !== null, 'cmd new Checkout succeeds');
 }
 
 {
-  const r = run(ws, 'em evt new hotel.evt.RoomBooked');
+  const r = run(ws, 'em evt new hotel.evt.room-booked');
   assert(r !== null, 'evt new RoomBooked succeeds');
-  assert(r?.data?.node?.canonicalId === 'hotel.evt.RoomBooked', 'RoomBooked canonicalId correct');
+  assert(r?.data?.node?.canonicalId === 'hotel.evt.room-booked', 'RoomBooked canonicalId correct');
 }
 
 {
-  const r = run(ws, 'em evt new hotel.evt.BookingCancelled');
+  const r = run(ws, 'em evt new hotel.evt.booking-cancelled');
   assert(r !== null, 'evt new BookingCancelled succeeds');
 }
 
 {
-  const r = run(ws, 'em evt new hotel.evt.CheckoutCompleted');
+  const r = run(ws, 'em evt new hotel.evt.checkout-completed');
   assert(r !== null, 'evt new CheckoutCompleted succeeds');
 }
 
 {
-  const r = run(ws, 'em view new hotel.view.BookingSummary');
+  const r = run(ws, 'em view new hotel.view.booking-summary');
   assert(r !== null, 'view new BookingSummary succeeds');
   assert(r?.data?.node?.kind === 'viewModel', 'BookingSummary kind is viewModel');
 }
 
 {
-  const r = run(ws, 'em view new hotel.view.RoomAvailability');
+  const r = run(ws, 'em view new hotel.view.room-availability');
   assert(r !== null, 'view new RoomAvailability succeeds');
 }
 
 {
-  const r = run(ws, 'em proc new hotel.proc.BookingValidator');
+  const r = run(ws, 'em proc new hotel.proc.booking-validator');
   assert(r !== null, 'proc new BookingValidator succeeds');
 }
 
 {
-  const r = run(ws, 'em trigger new hotel.trigger.CheckoutReminder');
+  const r = run(ws, 'em trigger new hotel.trigger.checkout-reminder');
   assert(r !== null, 'trigger new CheckoutReminder succeeds');
 }
 
@@ -110,44 +110,44 @@ console.log('\n=== Phase 2: Create Nodes ===');
 console.log('\n=== Phase 3: Link Nodes ===');
 
 {
-  const r = run(ws, 'em link cmd->evt hotel.cmd.BookRoom hotel.evt.RoomBooked');
+  const r = run(ws, 'em link cmd->evt hotel.cmd.book-room hotel.evt.room-booked');
   assert(r !== null, 'link BookRoom -> RoomBooked succeeds');
   assert(r?.data?.edge?.type === 'commandCausesEvent', 'edge type is commandCausesEvent');
 }
 
 {
-  const r = run(ws, 'em link cmd->evt hotel.cmd.CancelBooking hotel.evt.BookingCancelled');
+  const r = run(ws, 'em link cmd->evt hotel.cmd.cancel-booking hotel.evt.booking-cancelled');
   assert(r !== null, 'link CancelBooking -> BookingCancelled succeeds');
 }
 
 {
-  const r = run(ws, 'em link cmd->evt hotel.cmd.Checkout hotel.evt.CheckoutCompleted');
+  const r = run(ws, 'em link cmd->evt hotel.cmd.checkout hotel.evt.checkout-completed');
   assert(r !== null, 'link Checkout -> CheckoutCompleted succeeds');
 }
 
 {
-  const r = run(ws, 'em link evt->view hotel.evt.RoomBooked hotel.view.BookingSummary');
+  const r = run(ws, 'em link evt->view hotel.evt.room-booked hotel.view.booking-summary');
   assert(r !== null, 'link RoomBooked -> BookingSummary succeeds');
   assert(r?.data?.edge?.type === 'eventRefreshesViewModel', 'edge type is eventRefreshesViewModel');
 }
 
 {
-  const r = run(ws, 'em link evt->view hotel.evt.RoomBooked hotel.view.RoomAvailability');
+  const r = run(ws, 'em link evt->view hotel.evt.room-booked hotel.view.room-availability');
   assert(r !== null, 'link RoomBooked -> RoomAvailability succeeds');
 }
 
 {
-  const r = run(ws, 'em link evt->view hotel.evt.BookingCancelled hotel.view.RoomAvailability');
+  const r = run(ws, 'em link evt->view hotel.evt.booking-cancelled hotel.view.room-availability');
   assert(r !== null, 'link BookingCancelled -> RoomAvailability succeeds');
 }
 
 {
-  const r = run(ws, 'em link evt->view hotel.evt.BookingCancelled hotel.view.BookingSummary');
+  const r = run(ws, 'em link evt->view hotel.evt.booking-cancelled hotel.view.booking-summary');
   assert(r !== null, 'link BookingCancelled -> BookingSummary succeeds');
 }
 
 {
-  const r = run(ws, 'em link evt->view hotel.evt.CheckoutCompleted hotel.view.BookingSummary');
+  const r = run(ws, 'em link evt->view hotel.evt.checkout-completed hotel.view.booking-summary');
   assert(r !== null, 'link CheckoutCompleted -> BookingSummary succeeds');
 }
 
@@ -155,33 +155,33 @@ console.log('\n=== Phase 3: Link Nodes ===');
 console.log('\n=== Phase 4: View Fields ===');
 
 {
-  const r = run(ws, 'em view field add hotel.view.BookingSummary --field-id booking_id --name bookingId --type string --from-event hotel.evt.RoomBooked --path bookingId');
+  const r = run(ws, 'em view field add hotel.view.booking-summary --field-id booking_id --name bookingId --type string --from-event hotel.evt.room-booked --path bookingId');
   assert(r !== null, 'field add booking_id succeeds');
 }
 
 {
-  const r = run(ws, 'em view field add hotel.view.BookingSummary --field-id guest_name --name guestName --type string --from-event hotel.evt.RoomBooked --path guestName');
+  const r = run(ws, 'em view field add hotel.view.booking-summary --field-id guest_name --name guestName --type string --from-event hotel.evt.room-booked --path guestName');
   assert(r !== null, 'field add guest_name succeeds');
 }
 
 {
-  const r = run(ws, 'em view field add hotel.view.BookingSummary --field-id room_number --name roomNumber --type string --from-event hotel.evt.RoomBooked --path roomNumber --nullable');
+  const r = run(ws, 'em view field add hotel.view.booking-summary --field-id room_number --name roomNumber --type string --from-event hotel.evt.room-booked --path roomNumber --nullable');
   assert(r !== null, 'field add room_number (nullable) succeeds');
 }
 
 {
-  const r = run(ws, 'em view field add hotel.view.RoomAvailability --field-id room_id --name roomId --type string --from-event hotel.evt.RoomBooked --path roomId');
+  const r = run(ws, 'em view field add hotel.view.room-availability --field-id room_id --name roomId --type string --from-event hotel.evt.room-booked --path roomId');
   assert(r !== null, 'field add room_id succeeds');
 }
 
 {
-  const r = run(ws, 'em view schema show hotel.view.BookingSummary');
+  const r = run(ws, 'em view schema show hotel.view.booking-summary');
   assert(r !== null, 'view schema show succeeds');
   assert(r?.data?.fields?.length === 3, `BookingSummary has 3 fields (got ${r?.data?.fields?.length})`);
 }
 
 {
-  const r = run(ws, 'em view schema show hotel.view.RoomAvailability');
+  const r = run(ws, 'em view schema show hotel.view.room-availability');
   assert(r?.data?.fields?.length === 1, `RoomAvailability has 1 field (got ${r?.data?.fields?.length})`);
 }
 
@@ -189,12 +189,18 @@ console.log('\n=== Phase 4: View Fields ===');
 console.log('\n=== Phase 5: Proc & Trigger Bindings ===');
 
 {
-  const r = run(ws, 'em proc bind-view --proc hotel.proc.BookingValidator --view hotel.view.RoomAvailability --fields room_id');
+  const r = run(ws, 'em proc bind-view --proc hotel.proc.booking-validator --view hotel.view.room-availability --fields room_id');
   assert(r !== null, 'proc bind-view succeeds');
 }
 
 {
-  const r = run(ws, 'em trigger issues-cmd --trigger hotel.trigger.CheckoutReminder --cmd hotel.cmd.Checkout');
+  const r = run(ws, 'em link evt->proc hotel.evt.room-booked hotel.proc.booking-validator');
+  assert(r !== null, 'link RoomBooked -> BookingValidator succeeds');
+  assert(r?.data?.edge?.type === 'eventUpdatesProcessor', 'edge type is eventUpdatesProcessor');
+}
+
+{
+  const r = run(ws, 'em trigger issues-cmd --trigger hotel.trigger.checkout-reminder --cmd hotel.cmd.checkout');
   assert(r !== null, 'trigger issues-cmd succeeds');
 }
 
@@ -232,13 +238,16 @@ console.log('\n=== Phase 7: UI ===');
 }
 
 {
-  const r = run(ws, 'em ui bind-view --ui ui.form.booking-form --view hotel.view.BookingSummary --fields booking_id,guest_name');
+  const r = run(ws, 'em ui bind-view --ui ui.form.booking-form --view hotel.view.booking-summary --fields booking_id,guest_name');
   assert(r !== null, 'ui bind-view succeeds');
+  assert(r?.data?.edge?.type === 'viewModelConsumedByUiOrProcessor', 'ui bind-view creates a view model consumption edge');
+  assert(r?.data?.edge?.toNodeId === 'ui.form.booking-form', 'ui bind-view points at the booking form');
 }
 
 {
-  const r = run(ws, 'em role issues-cmd --role guest --via ui.form.booking-form --cmd hotel.cmd.BookRoom');
+  const r = run(ws, 'em role issues-cmd --role guest --via ui.form.booking-form --cmd hotel.cmd.book-room');
   assert(r !== null, 'role issues-cmd succeeds');
+  assert(r?.data?.edge?.viaNodeId === 'ui.form.booking-form', 'role issues-cmd records the booking form as its surface');
 }
 
 {
@@ -251,60 +260,60 @@ console.log('\n=== Phase 7: UI ===');
 console.log('\n=== Phase 8: Graph Commands ===');
 
 {
-  const r = run(ws, 'em show hotel.cmd.BookRoom');
+  const r = run(ws, 'em show hotel.cmd.book-room');
   assert(r !== null, 'show BookRoom succeeds');
-  assert(r?.data?.node?.canonicalId === 'hotel.cmd.BookRoom', 'show returns correct node');
+  assert(r?.data?.node?.canonicalId === 'hotel.cmd.book-room', 'show returns correct node');
   assert(r?.data?.relations?.outgoing?.length >= 1, 'BookRoom has at least 1 outgoing edge');
   console.log('  📊 show outgoing edges:', r?.data?.relations?.outgoing);
 }
 
 {
-  const r = run(ws, 'em neighbors --node hotel.cmd.BookRoom --direction out');
+  const r = run(ws, 'em neighbors --node hotel.cmd.book-room --direction out');
   assert(r !== null, 'neighbors out succeeds');
   assert(r?.data?.neighbors?.length >= 1, 'BookRoom has at least 1 neighbor');
   console.log('  📊 neighbors:', r?.data?.neighbors?.map((n: any) => n.nodeId));
 }
 
 {
-  const r = run(ws, 'em neighbors --node hotel.evt.RoomBooked --direction in');
+  const r = run(ws, 'em neighbors --node hotel.evt.room-booked --direction in');
   assert(r !== null, 'neighbors in for RoomBooked succeeds');
   const neighbors = r?.data?.neighbors?.map((n: any) => n.nodeId);
-  assert(neighbors?.includes('hotel.cmd.BookRoom'), 'RoomBooked incoming includes BookRoom');
+  assert(neighbors?.includes('hotel.cmd.book-room'), 'RoomBooked incoming includes BookRoom');
 }
 
 {
-  const r = run(ws, 'em neighbors --node hotel.evt.RoomBooked --direction both');
+  const r = run(ws, 'em neighbors --node hotel.evt.room-booked --direction both');
   assert(r !== null, 'neighbors both succeeds');
   console.log('  📊 RoomBooked neighbors (both):', r?.data?.neighbors?.map((n: any) => `${n.direction}:${n.nodeId}`));
 }
 
 {
-  const r = run(ws, 'em walk --from hotel.cmd.BookRoom --direction forward');
+  const r = run(ws, 'em walk --from hotel.cmd.book-room --direction forward');
   assert(r !== null, 'walk forward succeeds');
   assert(r?.data?.subgraph?.branches?.length >= 1 || r?.data?.subgraph?.forwardBranches?.length >= 1, 'walk returns branches');
   console.log('  📊 walk forward branches:', JSON.stringify(r?.data?.subgraph).slice(0, 500));
 }
 
 {
-  const r = run(ws, 'em walk --from hotel.view.BookingSummary --direction backward');
+  const r = run(ws, 'em walk --from hotel.view.booking-summary --direction backward');
   assert(r !== null, 'walk backward succeeds');
   console.log('  📊 walk backward branches:', JSON.stringify(r?.data?.subgraph).slice(0, 500));
 }
 
 {
-  const r = run(ws, 'em walk --from hotel.cmd.BookRoom --direction both');
+  const r = run(ws, 'em walk --from hotel.cmd.book-room --direction both');
   assert(r !== null, 'walk both succeeds');
 }
 
 {
-  const r = run(ws, 'em trace --from hotel.cmd.BookRoom --to hotel.view.BookingSummary');
+  const r = run(ws, 'em trace --from hotel.cmd.book-room --to hotel.view.booking-summary');
   assert(r !== null, 'trace succeeds');
   assert(r?.data?.paths?.length >= 1, 'trace finds at least 1 path');
   console.log('  📊 trace paths:', JSON.stringify(r?.data?.paths));
 }
 
 {
-  const r = run(ws, 'em trace --from hotel.cmd.CancelBooking --to hotel.view.RoomAvailability');
+  const r = run(ws, 'em trace --from hotel.cmd.cancel-booking --to hotel.view.room-availability');
   assert(r !== null, 'trace CancelBooking -> RoomAvailability succeeds');
   assert(r?.data?.paths?.length >= 1, 'trace finds path CancelBooking -> RoomAvailability');
 }
@@ -317,9 +326,18 @@ console.log('\n=== Phase 8: Graph Commands ===');
 }
 
 {
-  const r = run(ws, 'em graph --focus hotel.cmd.BookRoom --depth 2');
+  const r = run(ws, 'em graph --focus hotel.cmd.book-room --depth 2');
   assert(r !== null, 'graph with focus succeeds');
   console.log('  📊 focused graph:\n' + r?.data?.graph);
+}
+
+{
+  const r = run(ws, 'em layout --focus hotel.view.booking-summary --direction forward --hops 1 --include-truncated-paths --format json');
+  assert(r !== null, 'layout from BookingSummary succeeds');
+  assert(
+    r?.data?.occurrences?.some((occurrence: any) => occurrence.canonicalNodeId === 'ui.form.booking-form'),
+    'layout includes the UI form that consumes BookingSummary',
+  );
 }
 
 // ========== PHASE 9: Draft Status & Validate ==========
@@ -378,21 +396,23 @@ assert(fs.existsSync(path.join(projectDir, 'revisions')), 'revisions dir exists'
 const nodeFiles = fs.readdirSync(path.join(projectDir, 'nodes'));
 console.log(`  📁 node files (${nodeFiles.length}):`, nodeFiles);
 assert(nodeFiles.length >= 10, `expected >=10 node files, got ${nodeFiles.length}`);
+assert(nodeFiles.includes('ui.page.booking-page.yaml'), 'UI page node file exists');
+assert(nodeFiles.includes('ui.form.booking-form.yaml'), 'UI form node file exists');
 
 const edgeFiles = fs.readdirSync(path.join(projectDir, 'edges'));
 console.log(`  📁 edge files (${edgeFiles.length}):`, edgeFiles);
 assert(edgeFiles.length >= 8, `expected >=8 edge files, got ${edgeFiles.length}`);
 
-const bookRoomYaml = fs.readFileSync(path.join(projectDir, 'nodes', 'hotel.cmd.BookRoom.yaml'), 'utf-8');
+const bookRoomYaml = fs.readFileSync(path.join(projectDir, 'nodes', 'hotel.cmd.book-room.yaml'), 'utf-8');
 assert(bookRoomYaml.includes('kind: cmd'), 'BookRoom YAML has kind: cmd');
-assert(bookRoomYaml.includes('canonicalId: hotel.cmd.BookRoom'), 'BookRoom YAML has correct canonicalId');
-console.log('  📄 hotel.cmd.BookRoom.yaml:\n' + bookRoomYaml.split('\n').map(l => '    ' + l).join('\n'));
+assert(bookRoomYaml.includes('canonicalId: hotel.cmd.book-room'), 'BookRoom YAML has correct canonicalId');
+console.log('  📄 hotel.cmd.book-room.yaml:\n' + bookRoomYaml.split('\n').map(l => '    ' + l).join('\n'));
 
 const vmSchemaDir = path.join(projectDir, 'view-model-schemas');
 const schemaFiles = fs.readdirSync(vmSchemaDir);
 console.log(`  📁 view-model-schema files (${schemaFiles.length}):`, schemaFiles);
 
-const bookingSchema = fs.readFileSync(path.join(vmSchemaDir, 'hotel.view.BookingSummary.schema.yaml'), 'utf-8');
+const bookingSchema = fs.readFileSync(path.join(vmSchemaDir, 'hotel.view.booking-summary.schema.yaml'), 'utf-8');
 assert(bookingSchema.includes('booking_id'), 'schema has booking_id field');
 assert(bookingSchema.includes('guest_name'), 'schema has guest_name field');
 assert(bookingSchema.includes('room_number'), 'schema has room_number field');
@@ -402,7 +422,7 @@ const revFiles = fs.readdirSync(path.join(projectDir, 'revisions'));
 console.log(`  📁 revision files (${revFiles.length}):`, revFiles);
 assert(revFiles.length >= 1, 'has at least 1 revision file');
 
-const contextYaml = fs.readFileSync(path.join(tmpDir, 'context.yaml'), 'utf-8');
+const contextYaml = fs.readFileSync(path.join(tmpDir, '.mp-cache', 'context.yaml'), 'utf-8');
 assert(contextYaml.includes('proj_hotel-booking'), 'context has project reference');
 console.log('  📄 context.yaml:\n' + contextYaml.split('\n').map(l => '    ' + l).join('\n'));
 
@@ -410,19 +430,19 @@ console.log('  📄 context.yaml:\n' + contextYaml.split('\n').map(l => '    ' +
 console.log('\n=== Phase 12: Review ===');
 
 {
-  const r = run(ws, 'em review impact evt hotel.evt.RoomBooked');
+  const r = run(ws, 'em review impact evt hotel.evt.room-booked');
   assert(r !== null, 'review impact evt succeeds');
   console.log('  📊 RoomBooked impact:', JSON.stringify(r?.data, null, 2));
   assert(r?.data?.affectedViewModels?.length >= 1, 'RoomBooked affects at least 1 viewModel');
   assert(
-    r?.data?.affectedViewModels?.includes('hotel.view.BookingSummary') ||
-    r?.data?.affectedViewModels?.includes('hotel.view.RoomAvailability'),
+    r?.data?.affectedViewModels?.includes('hotel.view.booking-summary') ||
+    r?.data?.affectedViewModels?.includes('hotel.view.room-availability'),
     'RoomBooked affects BookingSummary or RoomAvailability'
   );
 }
 
 {
-  const r = run(ws, 'em review impact field hotel.view.BookingSummary booking_id');
+  const r = run(ws, 'em review impact field hotel.view.booking-summary booking_id');
   assert(r !== null, 'review impact field succeeds');
   console.log('  📊 booking_id field impact:', JSON.stringify(r?.data, null, 2));
 }
@@ -436,4 +456,8 @@ if (failures === 0) {
   process.exit(1);
 }
 
-fs.rmSync(tmpDir, { recursive: true });
+if (process.env.EM_KEEP_SMOKE_WORKSPACE === '1') {
+  console.log(`\nWorkspace kept at: ${tmpDir}`);
+} else {
+  fs.rmSync(tmpDir, { recursive: true });
+}

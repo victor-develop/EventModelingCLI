@@ -764,6 +764,30 @@ export function linkEvtView(ws: Workspace, evtId: string, viewModelId: string): 
   }, { projectId: manifest.id, draftId: mutation.draftId });
 }
 
+export function linkEvtProcessor(ws: Workspace, evtId: string, procId: string): CLIResult {
+  const check = requireProject(ws);
+  if ('ok' in check && !check.ok) return check;
+  const mutation = mutationRunnerOrResult(ws, 'em link evt->proc');
+  if (isCliResult(mutation)) return mutation;
+  const manifest = ws.getManifest()!;
+  const evt = ws.getNode(evtId);
+  if (!evt) return errResult('em link evt->proc', 'NOT_FOUND', `Event "${evtId}" not found`);
+  const proc = ws.getNode(procId);
+  if (!proc) return errResult('em link evt->proc', 'NOT_FOUND', `Processor "${procId}" not found`);
+  const edgeId = ws.generateEdgeId();
+  const edge = {
+    id: edgeId,
+    projectId: manifest.id,
+    type: 'eventUpdatesProcessor' as const,
+    fromNodeId: evt.canonicalId,
+    toNodeId: proc.canonicalId,
+  };
+  mutation.saveEdge(edge);
+  return okResult('em link evt->proc', {
+    edge: { id: edge.id, type: edge.type, fromNodeId: edge.fromNodeId, toNodeId: edge.toNodeId },
+  }, { projectId: manifest.id, draftId: mutation.draftId });
+}
+
 export function uiBindView(ws: Workspace, uiId: string, viewModelId: string, fields?: string[]): CLIResult {
   const check = requireProject(ws);
   if ('ok' in check && !check.ok) return check;

@@ -155,6 +155,8 @@ All commands should return a consistent top-level envelope.
 
 [em link evt->view](em-link-evt-to-view.md)
 
+[em link evt->proc](em-link-evt-to-proc.md)
+
 [em view field add](em-view-field-add.md)
 
 [em view field edit](em-view-field-edit.md)

@@ -57,6 +57,12 @@ function App() {
     return new Map(changes.map(change => [change.id, change]));
   }, [visibleSnapshot?.diffOverlay]);
 
+  const selectedDiffChanges = useMemo(() => (
+    selectedDiffChangeIds
+      .map(changeId => diffChangesById.get(changeId))
+      .filter((change): change is NonNullable<typeof change> => Boolean(change))
+  ), [diffChangesById, selectedDiffChangeIds]);
+
   useEffect(() => {
     const onPopState = () => {
       setSelectedDiffChangeIds(readDiffSelectionFromLocation());
@@ -179,6 +185,7 @@ function App() {
       />
       <XyflowCanvas
         snapshot={visibleSnapshot}
+        selectedDiffChanges={selectedDiffChanges}
         onOccurrenceLockChange={setOccurrenceLock}
         onOccurrenceReset={resetOccurrencePosition}
         onExploreLeft={handleWalkLeft}

@@ -18,17 +18,26 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import { Lock, RotateCcw, Unlock } from 'lucide-react';
-import type { VisualizationSnapshot } from 'event-modeling-spec-cli/viewer-contract/types';
+import type {
+  ViewerDiffChange,
+  VisualizationSnapshot,
+} from 'event-modeling-spec-cli/viewer-contract/types';
 import { NODE_COLORS } from '../../types';
 import { toReactFlowEdges, toReactFlowNodes } from '../adapter';
 import { edgeTypes } from '../adapter/edgeTypes';
 import { nodeTypes } from '../adapter/nodeTypes';
 import { guardNodeChanges } from '../interaction/nodeChangeGuard';
+import { isCompareOverlayActive } from '../diffOverlayPresentation';
+import {
+  resolveDiffFocusTargets,
+  resolveDiffFocusViewport,
+} from '../diffFocus';
 import { DiffSelectionProvider } from './DiffSelectionContext';
 import { nodeVisualKindFromType } from './nodeVisualKind';
 
 interface XyflowCanvasProps {
   snapshot: VisualizationSnapshot;
+  selectedDiffChanges?: ViewerDiffChange[];
   onOccurrenceLockChange?: (occurrenceId: string, lockLevel: 'hard' | 'none') => void;
   onOccurrenceReset?: (occurrenceId: string) => void;
   onExploreLeft?: () => void;
@@ -46,6 +55,7 @@ type SelectionInfo =
 
 export function XyflowCanvas({
   snapshot,
+  selectedDiffChanges,
   onOccurrenceLockChange,
   onOccurrenceReset,
   onExploreLeft,
@@ -56,6 +66,7 @@ export function XyflowCanvas({
     <ReactFlowProvider>
       <XyflowCanvasInner
         snapshot={snapshot}
+        selectedDiffChanges={selectedDiffChanges}
         onOccurrenceLockChange={onOccurrenceLockChange}
         onOccurrenceReset={onOccurrenceReset}
         onExploreLeft={onExploreLeft}
@@ -68,6 +79,7 @@ export function XyflowCanvas({
 
 function XyflowCanvasInner({
   snapshot,
+  selectedDiffChanges = [],
   onOccurrenceLockChange,
   onOccurrenceReset,
   onExploreLeft,
@@ -77,7 +89,9 @@ function XyflowCanvasInner({
   const [nodes, setNodes] = useState<Node[]>(() => toReactFlowNodes(snapshot, { includeFrontierHandles: true }));
   const [edges, setEdges] = useState<Edge[]>(() => toReactFlowEdges(snapshot));
   const [selection, setSelection] = useState<SelectionInfo | null>(null);
+  const [flowReady, setFlowReady] = useState(false);
   const baselinePositionsRef = useRef(new Map<string, { x: number; y: number }>());
+  const diffFocusFrameRef = useRef<number | null>(null);
   const flowReadyRef = useRef(false);
   const reactFlow = useReactFlow<Node, Edge>();
 
@@ -107,8 +121,50 @@ function XyflowCanvasInner({
 
   const onInit = useCallback((instance: ReactFlowInstance<Node, Edge>) => {
     flowReadyRef.current = true;
+    setFlowReady(true);
     void instance.fitView(FIT_VIEW_OPTIONS);
   }, []);
+
+  useEffect(() => {
+    if (!flowReady || selectedDiffChanges.length === 0) return;
+    const targets = resolveDiffFocusTargets(snapshot, selectedDiffChanges);
+    if (targets.nodeIds.length === 0) return;
+
+    const firstFrame = window.requestAnimationFrame(() => {
+      const secondFrame = window.requestAnimationFrame(() => {
+        if (!flowReadyRef.current) return;
+
+        const targetNodeIds = new Set(targets.nodeIds);
+        const targetEdgeIds = new Set(targets.edgeIds);
+        setNodes(currentNodes => currentNodes.map(node => ({
+          ...node,
+          selected: targetNodeIds.has(node.id),
+        })));
+        setEdges(currentEdges => currentEdges.map(edge => ({
+          ...edge,
+          selected: targetEdgeIds.has(edge.id),
+        })));
+        setSelection(selectionForDiffTarget(snapshot, targets.nodeIds, targets.edgeIds));
+
+        const canvas = document.querySelector<HTMLElement>('.xyflow-shell')?.getBoundingClientRect();
+        if (!canvas) return;
+        const overlay = diffFocusOverlayBounds();
+        const bounds = reactFlow.getNodesBounds(targets.nodeIds);
+        void reactFlow.setViewport(
+          resolveDiffFocusViewport(bounds, canvas, overlay),
+          { duration: 420 },
+        );
+      });
+      diffFocusFrameRef.current = secondFrame;
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (diffFocusFrameRef.current !== null) {
+        window.cancelAnimationFrame(diffFocusFrameRef.current);
+      }
+    };
+  }, [flowReady, reactFlow, selectedDiffChanges, snapshot]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setNodes((currentNodes) => {
@@ -186,8 +242,10 @@ function XyflowCanvasInner({
     return NODE_COLORS[nodeVisualKindFromType(node.type)] ?? NODE_COLORS.shared;
   }, []);
 
+  const compareOverlayClass = isCompareOverlayActive(snapshot) ? ' is-compare-overlay' : '';
+
   return (
-    <main className="xyflow-shell" aria-label="Event modeling canvas">
+    <main className={`xyflow-shell${compareOverlayClass}`} aria-label="Event modeling canvas">
       <DiffSelectionProvider onSelect={onDiffSelect}>
         <ReactFlow
           nodes={nodes}
@@ -219,6 +277,43 @@ function XyflowCanvasInner({
       />
     </main>
   );
+}
+
+function diffFocusOverlayBounds(): DOMRect | undefined {
+  return (
+    document.querySelector<HTMLElement>('.diff-drawer')
+    ?? document.querySelector<HTMLElement>('.diff-panel')
+    ?? document.querySelector<HTMLElement>('.diff-panel-toggle')
+  )?.getBoundingClientRect();
+}
+
+function selectionForDiffTarget(
+  snapshot: VisualizationSnapshot,
+  nodeIds: string[],
+  edgeIds: string[],
+): SelectionInfo | null {
+  const edge = snapshot.renderedEdges.find(item => edgeIds.includes(item.displayEdgeId));
+  if (edge) {
+    return {
+      type: 'edge',
+      id: edge.displayEdgeId,
+      title: edge.displayEdgeId,
+      subtitle: edge.kind,
+    };
+  }
+
+  const occurrence = snapshot.occurrences.find(item => nodeIds.includes(item.occurrenceId));
+  if (occurrence) {
+    return {
+      type: 'node',
+      id: occurrence.occurrenceId,
+      title: snapshot.domainNodes[occurrence.canonicalNodeId]?.displayName ?? occurrence.canonicalNodeId,
+      subtitle: occurrence.canonicalNodeId,
+      lockLevel: occurrence.lockLevel,
+    };
+  }
+
+  return null;
 }
 
 function SelectionInspector({

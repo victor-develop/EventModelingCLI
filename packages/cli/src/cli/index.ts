@@ -151,6 +151,7 @@ async function main() {
     console.log('  role add <id>             Create a role node [--name <label>]');
     console.log('  link cmd->evt <a> <b>     Link command to event');
     console.log('  link evt->view <a> <b>    Link event to view model');
+    console.log('  link evt->proc <a> <b>    Link event to processor');
     console.log('  walk --from <id>          Walk the graph');
     console.log('  layout --focus <id>       Generate layout (--format json|table|ascii)');
     console.log('  graph                     Show graph (mermaid)');

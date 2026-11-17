@@ -231,6 +231,7 @@ function routeCommandInner(ws: Workspace, rawArgs: string[], options: RouteComma
     case 'link': {
       if (subgroup === 'cmd->evt') return cmd.linkCmdEvt(ws, positional[2] ?? '', positional[3] ?? '');
       if (subgroup === 'evt->view') return cmd.linkEvtView(ws, positional[2] ?? '', positional[3] ?? '');
+      if (subgroup === 'evt->proc') return cmd.linkEvtProcessor(ws, positional[2] ?? '', positional[3] ?? '');
       break;
     }
     case 'show': return cmd.show(ws, positional[1] ?? '');

@@ -58,7 +58,14 @@ const NODE_VISUAL_LEGEND_LABEL: Record<NodeVisualKind, string> = {
 export const LEGEND_NODE_VISUAL_KINDS: NodeVisualKind[] = ['cmd', 'evt', 'viewModel', 'ui', 'trigger', 'proc'];
 
 export function nodeVisualKindFromType(type: string | undefined): NodeVisualKind {
-  return type ? NODE_TYPE_VISUAL_KIND[type] ?? 'shared' : 'shared';
+  if (!type) return 'shared';
+  const mapped = NODE_TYPE_VISUAL_KIND[type];
+  if (mapped) return mapped;
+  if (type === 'cmd' || type === 'evt' || type === 'viewModel' || type === 'proc' || type === 'trigger' || type === 'role') {
+    return type;
+  }
+  if (type === 'ui' || type.startsWith('ui.')) return 'ui';
+  return 'shared';
 }
 
 export function nodeBadgeLabelFromType(type: string | undefined): string {

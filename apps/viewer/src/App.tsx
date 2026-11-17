@@ -200,6 +200,7 @@ function App() {
       <DiffDrawer
         changeIds={selectedDiffChangeIds}
         changesById={diffChangesById}
+        snapshot={visibleSnapshot}
         onSelectChangeIds={handleSelectDiffChangeIds}
         onClose={handleCloseDiffDrawer}
       />
